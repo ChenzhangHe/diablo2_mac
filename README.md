@@ -26,7 +26,7 @@ open build/AshenSigil.app
 | P | Read a town portal scroll |
 | Tab | Automap |
 | Click NPC / portal / waypoint | Talk, trade, travel |
-| F5 | New game (next seed) |
+| F5 | New game (only with `ASHEN_DEV=1`) |
 
 ## Layout
 
@@ -34,4 +34,9 @@ open build/AshenSigil.app
 - `Sources/AshenApp` — SpriteKit rendering, input, UI. All art is procedurally generated.
 - `Tests/AshenCoreTests` — XCTest suite.
 
-Debug: `ASHEN_SNAPSHOT=out.png swift run AshenSigil` renders a screenshot and quits.
+Progress autosaves to `~/Library/Application Support/AshenSigil/save.json` (on area change, every
+60 s, and on quit) and loads on launch. Delete that file to start over.
+
+Debug env vars (runs with any `ASHEN_*` var don't touch the save unless `ASHEN_SAVE=1`):
+`ASHEN_SNAPSHOT=out.png` (screenshot and quit), `ASHEN_START_AREA=<area id>`, `ASHEN_DEBUG_SKILLS=1`,
+`ASHEN_DEBUG_LOOT=1`, `ASHEN_DEBUG_SHOP=1`, `ASHEN_DEBUG_AUTOMAP=1`, `ASHEN_DEV=1` (F5 new game).

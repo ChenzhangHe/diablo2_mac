@@ -106,9 +106,28 @@ final class GameScene: SKScene {
 
     // MARK: - Level
 
-    /// New game: fresh world starting in camp.
-    private func buildLevel() {
-        let start = ProcessInfo.processInfo.environment["ASHEN_START_AREA"] ?? "reedford"
+    private let env = ProcessInfo.processInfo.environment
+    /// Debug runs never touch the real save file.
+    private var savingEnabled: Bool { !env.keys.contains { $0.hasPrefix("ASHEN_") } || env["ASHEN_SAVE"] != nil }
+    private var saveTimer = 0.0
+
+    func saveNow() {
+        guard savingEnabled, game != nil else { return }
+        do { try SaveStore.default.save(game.makeSave()) } catch { message("存档失败: \(error.localizedDescription)", color: ItemVisuals.bad) }
+    }
+
+    /// Continue from the save file if present, else start a new game in camp.
+    private func buildLevel(newGame: Bool = false) {
+        if !newGame, savingEnabled, let save = try? SaveStore.default.load() {
+            game = GameWorld(save: save)
+            seed = save.seed
+            buildArea()
+            message("已读取存档 · \(save.summary)", color: ItemVisuals.gold)
+            syncWorld()
+            return
+        }
+        let start = env["ASHEN_START_AREA"] ?? "reedford"
+        if newGame || !savingEnabled { seed = newGame ? UInt64(Date().timeIntervalSince1970) : seed }
         game = GameWorld(seed: seed, startArea: start)
         buildArea()
         if ProcessInfo.processInfo.environment["ASHEN_DEBUG_WALK_TO_EXIT"] != nil {
@@ -280,6 +299,8 @@ final class GameScene: SKScene {
         }
 
         game.update(dt: dt)
+        saveTimer += dt
+        if saveTimer > 60 { saveTimer = 0; saveNow() }
         handleEvents()
         updateHover()
         syncWorld()
@@ -723,6 +744,7 @@ final class GameScene: SKScene {
             case .areaEntered:
                 closeMenu()
                 closeTrade()
+                saveNow()
                 buildArea()
             case .openWaypoints:
                 openWaypointMenu()
@@ -975,7 +997,7 @@ final class GameScene: SKScene {
 
     override func keyDown(with event: NSEvent) {
         guard let k = keyName(event) else { return }
-        if event.keyCode == 96 { seed &+= 1; buildLevel(); return }   // F5
+        if event.keyCode == 96 && env["ASHEN_DEV"] != nil { buildLevel(newGame: true); return }   // F5 (dev only)
         if ["q", "w", "e", "r"].contains(k) {
             if !bindHoveredSkill(to: k) { castHotbar(k) }
             return

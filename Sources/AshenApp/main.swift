@@ -3,6 +3,7 @@ import SpriteKit
 
 final class AppDelegate: NSObject, NSApplicationDelegate {
     var window: NSWindow!
+    var scene: GameScene?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         let size = NSSize(width: 1280, height: 800)
@@ -25,11 +26,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let scene = GameScene(size: size)
         scene.scaleMode = .resizeFill
         view.presentScene(scene)
+        self.scene = scene
 
         window.makeKeyAndOrderFront(nil)
         Snapshot.scheduleIfRequested(view: view, window: window)
         window.makeFirstResponder(view)
         NSApp.activate(ignoringOtherApps: true)
+    }
+
+    func applicationWillTerminate(_ notification: Notification) {
+        scene?.saveNow()
     }
 
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { true }

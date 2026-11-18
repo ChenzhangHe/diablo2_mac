@@ -73,6 +73,8 @@ public final class GameWorld {
 
     func makeID() -> EntityID { defer { nextID += 1 }; return nextID }
 
+    func reserveIDs(above n: Int) { nextID = max(nextID, n + 1) }
+
     // MARK: - Spawning
 
     private func spawnMonsters(kinds: [MonsterKind]) {
