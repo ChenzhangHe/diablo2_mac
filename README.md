@@ -16,7 +16,8 @@ open build/AshenSigil.app
 
 | Key | Action |
 |---|---|
-| Left click / hold | Move (A* pathfinding) |
+| Left click / hold | Move (A* pathfinding) / attack monster under cursor |
+| 1 / 2 | Health / mana potion (heals over time) |
 | WASD / arrows | Move |
 | R | Regenerate level (next seed) |
 
