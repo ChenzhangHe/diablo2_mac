@@ -122,3 +122,15 @@ final class TravelTests: XCTestCase {
         XCTAssertLessThan(w.player.position.distance(to: Vec2(center: w.level.waypoint!)), 3)
     }
 }
+
+final class AreaPathTests: XCTestCase {
+    func testPlayerCanWalkFromEntranceToExitEverywhere() {
+        for area in Areas.actOne where area.style != .arena {
+            let lv = LevelGenerator.generate(area, seed: GameWorld.areaSeed(1, area.id))
+            var m = Mover(position: Vec2(center: lv.spawn), speed: 6)
+            XCTAssertTrue(m.moveTo(Vec2(center: lv.exit), on: lv.map), "\(area.name): no path")
+            for _ in 0..<(60 * 120) where m.isMoving { m.update(dt: 1.0 / 60, map: lv.map) }
+            XCTAssertLessThan(m.position.distance(to: Vec2(center: lv.exit)), 0.5, "\(area.name): got stuck at \(m.position)")
+        }
+    }
+}
