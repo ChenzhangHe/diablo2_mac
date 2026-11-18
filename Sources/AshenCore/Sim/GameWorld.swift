@@ -380,6 +380,7 @@ public final class GameWorld {
                 player.target = nil
                 player.mover.stop()
                 player.healPool = 0
+                player.gold -= player.gold / 10     // death costs a tenth of your gold
                 emit(.playerDied)
             }
         }

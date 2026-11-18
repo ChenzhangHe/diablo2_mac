@@ -89,10 +89,21 @@ final class GameScene: SKScene {
 
     override func didChangeSize(_ oldSize: CGSize) { layoutOverlay() }
 
+    /// How far the player's light reaches, as a fraction of the screen.
+    private var lightRadius: CGFloat {
+        guard let g = game else { return 0.62 }
+        switch g.area.style {
+        case .town: return 1.1
+        case .outdoor: return 0.78
+        case .arena: return 0.66
+        case .cave, .dungeon: return 0.56
+        }
+    }
+
     private func layoutOverlay() {
         guard size.width > 0 else { return }
         vignette?.removeFromParent()
-        let v = SKSpriteNode(texture: Textures.vignette(size: size, radius: min(size.width, size.height) * 0.62))
+        let v = SKSpriteNode(texture: Textures.vignette(size: size, radius: min(size.width, size.height) * lightRadius))
         v.size = size
         v.zPosition = 10_000
         cam.addChild(v)
@@ -228,6 +239,7 @@ final class GameScene: SKScene {
         infoLabel.text = "灰烬圣印 · \(game.area.name)" + (game.area.isTown ? "" : "  (区域等级 \(game.area.level))")
             + "    左键 移动/攻击/拾取/交互 · 右键/QWER 技能 · 1/2 药剂 · I 物品 · C 角色 · T 技能"
         hud.showBanner(game.area.name, color: ItemVisuals.text)
+        layoutOverlay()
     }
 
     private func debugSkills() {
@@ -727,6 +739,7 @@ final class GameScene: SKScene {
             case .playerDied:
                 player.setDead(true)
                 hud.showBanner("你倒下了", color: NSColor(calibratedRed: 0.75, green: 0.1, blue: 0.05, alpha: 1))
+                message("失去了 10% 的金币", color: ItemVisuals.bad)
             case .levelUp(let lv):
                 hud.showBanner("升级！等级 \(lv)", color: ItemVisuals.gold)
                 message("获得 5 属性点、1 技能点（C 打开角色面板分配）", color: ItemVisuals.gold)

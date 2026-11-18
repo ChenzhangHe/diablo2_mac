@@ -57,6 +57,7 @@ final class CombatTests: XCTestCase {
         let w = GameWorld(level: arena())
         w.player.stats.life = 1
         w.player.stats.lifeRegen = 0
+        w.player.gold = 100
         for _ in 0..<6 { w.spawn(Bestiary.husk, at: Vec2(center: GridPoint(4, 4))) }
         var died = false, respawned = false
         for _ in 0..<(60 * 20) {
@@ -70,6 +71,7 @@ final class CombatTests: XCTestCase {
         XCTAssertTrue(died)
         XCTAssertTrue(respawned)
         XCTAssertEqual(w.player.stats.life, w.player.stats.maxLife)
+        XCTAssertEqual(w.player.gold, 90)
     }
 
     func testHealthPotionHealsOverTime() {
