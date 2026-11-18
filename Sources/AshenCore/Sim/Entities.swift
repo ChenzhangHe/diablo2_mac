@@ -22,6 +22,7 @@ public struct Monster: Sendable, Identifiable {
     public var stunnedUntil = 0.0
     public var vulnerableUntil = 0.0
     public var vulnerability = 0.0
+    public var questID: String?
     public var resurrectCooldown = 0.0
     public var resurrections = 0
     public var rank: MonsterRank = .normal
@@ -146,6 +147,8 @@ public struct Player: Sendable {
     /// Open town portal: field area and position.
     public var openPortal: (area: String, position: Vec2)?
     public var stash = Inventory(width: 10, height: 8)
+    public var quests: [String: QuestState] = [:]
+    public func quest(_ id: String) -> QuestState { quests[id] ?? .notStarted }
     /// Discovered waypoints (area ids).
     public var waypoints: Set<String> = []
 
@@ -281,6 +284,7 @@ public enum GameEvent: Sendable, Equatable {
     case areaEntered(String)
     case openWaypoints
     case talk(String)
+    case questUpdated(String, QuestState)
     case notEnoughGold
     case bought(String)
     case sold(String, Int)

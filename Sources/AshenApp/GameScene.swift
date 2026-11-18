@@ -583,7 +583,9 @@ final class GameScene: SKScene {
         if npc.services.contains(.heal) { rows.append(("heal", "治疗", true)) }
         if npc.services.contains(.stash) { rows.append(("stash", "打开储物箱", true)) }
         rows.append(("close", "离开", true))
-        menuPanel.set(title: npc.name, body: wrap(npc.greeting, 20), rows: rows)
+        let questLines = game.talkQuests(id)
+        let body = questLines.isEmpty ? wrap(npc.greeting, 20) : questLines.flatMap { wrap($0, 20) }
+        menuPanel.set(title: npc.name, body: body, rows: rows)
         menuMode = "npc:" + id
         menuPanel.isHidden = false
     }
@@ -700,6 +702,12 @@ final class GameScene: SKScene {
                 if let old = monsterNodes.removeValue(forKey: id) { old.removeFromParent() }  // rebuilt alive next sync
                 if let m = game.monster(id) {
                     floatText("复活", at: m.position, color: NSColor(calibratedRed: 0.8, green: 0.4, blue: 1, alpha: 1), size: 12)
+                }
+            case .questUpdated(let qid, let st):
+                if st == .complete, let q = Quests.def(qid) {
+                    let giver = NPCs.def(q.giver)?.name ?? q.giver
+                    hud.showBanner("任务目标完成", color: ItemVisuals.gold)
+                    message("\(q.name)：返回营地找 \(giver)", color: ItemVisuals.gold)
                 }
             case .notEnoughGold:
                 message("金币不足", color: ItemVisuals.bad)

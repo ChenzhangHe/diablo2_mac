@@ -318,6 +318,7 @@ public final class GameWorld {
         monsters[idx].deathTime = time
         monsters[idx].mover.stop()
         let m = monsters[idx]
+        if let q = m.questID, [.notStarted, .active].contains(player.quest(q)) { setQuest(q, .complete) }
         let xp = Experience.scaled(m.xpValue, monsterLevel: m.stats.level, playerLevel: player.level)
         emit(.monsterDied(m.id, at: m.position, xp: xp))
         if player.gainXP(xp) > 0 { emit(.levelUp(player.level)) }
@@ -581,6 +582,69 @@ public final class GameWorld {
         }
         // Keep monsters away from the entrance.
         monsters.removeAll { $0.position.distance(to: Vec2(center: level.spawn)) < 8 }
+        spawnQuestTargets()
+    }
+
+    /// Quest uniques live in the spawn spot farthest from the entrance.
+    private func spawnQuestTargets() {
+        for q in Quests.all where q.area == area.id && !q.isMain
+            && [.notStarted, .active].contains(player.quest(q.id)) {
+            let d = level.map.distances(from: level.spawn)
+            let spot = level.rooms.map(\.center).filter { d[$0] != nil }.max { d[$0]! < d[$1]! } ?? level.exit
+            let kind = q.targetKind.scaled(to: max(1, area.level) + 1)
+            let id = spawn(kind, at: Vec2(center: spot), packID: 9_000)
+            guard let i = monsters.firstIndex(where: { $0.id == id }) else { continue }
+            monsters[i].promote(to: .unique, affixes: q.targetAffixes, name: q.targetName)
+            monsters[i].questID = q.id
+            // A few guards.
+            for _ in 0..<3 {
+                let gid = spawn(q.targetKind.scaled(to: max(1, area.level)), at: Vec2(center: spot) + Vec2(rng.unit() - 0.5, rng.unit() - 0.5), packID: 9_000)
+                if let gi = monsters.firstIndex(where: { $0.id == gid }) { monsters[gi].promote(to: .minion, affixes: []) }
+            }
+        }
+    }
+
+    /// Talking to an NPC advances their quests. Returns lines to show.
+    public func talkQuests(_ npc: String) -> [String] {
+        var lines: [String] = []
+        for q in Quests.given(by: npc) {
+            switch player.quest(q.id) {
+            case .notStarted:
+                // Main quest only opens once the side quest chain has begun.
+                setQuest(q.id, .active)
+                lines.append("【新任务】\(q.name)")
+                lines.append(q.intro)
+                lines.append(q.rewardText)
+                return lines
+            case .complete:
+                setQuest(q.id, .rewarded)
+                grant(q.reward)
+                lines.append("【任务完成】\(q.name)")
+                lines.append(q.completion)
+                lines.append(q.rewardText)
+                return lines
+            case .active, .rewarded:
+                continue
+            }
+        }
+        return lines
+    }
+
+    func setQuest(_ id: String, _ st: QuestState) {
+        player.quests[id] = st
+        emit(.questUpdated(id, st))
+    }
+
+    func grant(_ r: QuestReward) {
+        switch r {
+        case .skillPoint: player.skillPoints += 1
+        case .statPoints(let n): player.statPoints += n
+        case .experience(let n): if player.gainXP(n) > 0 { emit(.levelUp(player.level)) }
+        case .rareItem(let lvl):
+            let it = ItemGenerator().generate(id: makeID(), itemLevel: max(lvl, player.level), rng: &rng, forcedQuality: .rare,
+                                             base: ItemBases.all.filter { $0.category == .weapon && $0.qlvl <= max(lvl, player.level) }.last)
+            if !player.inventory.add(it) { dropLoot([.item(it)], at: player.position) }
+        }
     }
 
     /// Move the player to another area. Leaving saves the current one.
