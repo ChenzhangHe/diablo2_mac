@@ -43,11 +43,21 @@ public struct Monster: Sendable, Identifiable {
 
 public enum PlayerTarget: Sendable, Equatable {
     case monster(EntityID)
+    case groundItem(Int)
 }
 
 public struct Player: Sendable {
+    public var heroClass = HeroClass.emberguard
     public var mover: Mover
     public var stats: CombatStats
+    public var attributes: Attributes
+    public var statPoints = 0
+    public var equipment: [EquipSlot: Item] = [:]
+    public var inventory = Inventory()
+    /// Item held on the mouse cursor (classic inventory juggling).
+    public var cursor: Item?
+    public var gold = 0
+    public var goldFind = 0.0
     public var reach = 1.3
     public var target: PlayerTarget?
     public var attackCooldown = 0.0
@@ -55,20 +65,41 @@ public struct Player: Sendable {
     /// Potions heal over time, like classic ARPGs.
     public var healthPotions = 6
     public var manaPotions = 4
+    public static let beltCapacity = 12
     public var healPool = 0.0
     public var manaPool = 0.0
     public var deathTime: Double?
     public var xp = 0
 
     public var position: Vec2 { mover.position }
+    public var level: Int { stats.level }
 
-    public static func newHero(at pos: Vec2) -> Player {
-        var s = CombatStats(level: 1, life: 55, minDamage: 2, maxDamage: 7, attackRating: 90, defense: 15)
-        s.maxMana = 15; s.mana = 15
-        s.attacksPerSecond = 1.6
-        s.lifeRegen = 0.4
-        s.manaRegen = 0.5
-        return Player(mover: Mover(position: pos, speed: 4.5), stats: s)
+    public static func newHero(at pos: Vec2, heroClass: HeroClass = .emberguard) -> Player {
+        let attrs = heroClass.start
+        let (s, move, _) = StatCalculator.compute(heroClass: heroClass, level: 1, attributes: attrs, equipment: [:], current: nil)
+        var p = Player(heroClass: heroClass, mover: Mover(position: pos, speed: move), stats: s, attributes: attrs)
+        p.recalculate()
+        return p
+    }
+
+    /// Re-derive combat stats after gear/attribute/level changes.
+    public mutating func recalculate() {
+        let r = StatCalculator.compute(heroClass: heroClass, level: stats.level, attributes: attributes,
+                                       equipment: equipment, current: stats)
+        stats = r.stats
+        mover.speed = r.moveSpeed
+        goldFind = r.goldFind
+    }
+
+    public func canEquip(_ item: Item) -> Bool {
+        !EquipSlot.slots(for: item.base.category).isEmpty
+            && StatCalculator.meetsRequirements(item, attributes: attributes, equipment: equipment, level: level)
+    }
+
+    /// Slot an item would go to: first empty matching slot, else the first matching slot.
+    public func preferredSlot(for item: Item) -> EquipSlot? {
+        let slots = EquipSlot.slots(for: item.base.category)
+        return slots.first { equipment[$0] == nil } ?? slots.first
     }
 }
 
@@ -93,4 +124,9 @@ public enum GameEvent: Sendable, Equatable {
     case playerDied
     case playerRespawned
     case potion(health: Bool)
+    case blocked(at: Vec2)
+    case itemDropped(Int)
+    case pickedUp(String)
+    case inventoryFull
+    case cannotEquip(String)
 }

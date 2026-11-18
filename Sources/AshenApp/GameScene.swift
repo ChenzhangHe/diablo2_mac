@@ -8,6 +8,14 @@ final class GameScene: SKScene {
     private var vignette: SKSpriteNode?
     private let infoLabel = SKLabelNode(fontNamed: "Menlo")
     private let hud = HUD()
+    private let inventoryPanel = InventoryPanel()
+    private let characterPanel = CharacterPanel()
+    private let tooltip = Tooltip()
+    private var cursorIcon: SKNode?
+    private var cursorItemID: Int?
+    private var groundNodes: [Int: GroundItemNode] = [:]
+    private var hoveredGround: Int?
+    private let messages = SKNode()
 
     private var seed: UInt64 = 1
     private var game: GameWorld!
@@ -39,6 +47,13 @@ final class GameScene: SKScene {
         infoLabel.zPosition = 20_001
         cam.addChild(infoLabel)
         cam.addChild(hud)
+        inventoryPanel.isHidden = true
+        characterPanel.isHidden = true
+        cam.addChild(inventoryPanel)
+        cam.addChild(characterPanel)
+        cam.addChild(tooltip)
+        messages.zPosition = 20_002
+        cam.addChild(messages)
 
         buildLevel()
         layoutOverlay()
@@ -56,6 +71,9 @@ final class GameScene: SKScene {
         vignette = v
         infoLabel.position = CGPoint(x: -size.width / 2 + 12, y: size.height / 2 - 12)
         hud.layout(size: size)
+        inventoryPanel.position = CGPoint(x: size.width / 2 - InventoryPanel.size.width / 2 - 12, y: 30)
+        characterPanel.position = CGPoint(x: -size.width / 2 + CharacterPanel.size.width / 2 + 12, y: 30)
+        messages.position = CGPoint(x: 0, y: -size.height / 2 + 90)
     }
 
     // MARK: - Level
@@ -66,6 +84,7 @@ final class GameScene: SKScene {
         fadedWalls.removeAll()
         monsterNodes.removeAll()
         projectileNodes.removeAll()
+        groundNodes.removeAll()
 
         game = GameWorld(seed: seed)
         let map = game.level.map
@@ -104,8 +123,28 @@ final class GameScene: SKScene {
         if ProcessInfo.processInfo.environment["ASHEN_DEBUG_WALK_TO_EXIT"] != nil {
             game.commandMove(to: Vec2(center: game.level.exit))
         }
+        if ProcessInfo.processInfo.environment["ASHEN_DEBUG_LOOT"] != nil { debugLoot() }
         syncWorld()
-        infoLabel.text = "灰烬圣印 Ashen Sigil · M2   seed \(seed)   左键 移动/攻击 · 1/2 药剂 · R 新地图"
+        infoLabel.text = "灰烬圣印 Ashen Sigil · M3   seed \(seed)   左键 移动/攻击/拾取 · 1/2 药剂 · I 物品栏 · C 角色 · R 新地图"
+    }
+
+    private func debugLoot() {
+        var rng = SeededRNG(seed: 77)
+        let gen = ItemGenerator()
+        for i in 0..<8 {
+            let q: ItemQuality = i % 3 == 0 ? .rare : .magic
+            game.player.inventory.add(gen.generate(id: 50_000 + i, itemLevel: 12, rng: &rng, forcedQuality: q))
+        }
+        var drops: [LootTable.Drop] = [.gold(37)]
+        for i in 0..<4 { drops.append(.item(gen.generate(id: 60_000 + i, itemLevel: 8, rng: &rng))) }
+        game.dropLoot(drops, at: game.player.position + Vec2(1.5, 1.5))
+        inventoryPanel.isHidden = false
+        characterPanel.isHidden = false
+        DispatchQueue.main.async { [self] in
+            // Hover the first inventory item so the tooltip shows.
+            let cp = CGPoint(x: inventoryPanel.position.x - 130, y: inventoryPanel.position.y - 75)
+            if let v = view { lastMouseInView = v.convert(CGPoint(x: cp.x + cam.position.x, y: cp.y + cam.position.y), from: self) }
+        }
     }
 
     // MARK: - Coordinates
@@ -202,7 +241,80 @@ final class GameScene: SKScene {
             projectileNodes[id] = nil
         }
 
+        var present = Set<Int>()
+        for g in game.groundItems {
+            present.insert(g.id)
+            if groundNodes[g.id] == nil {
+                let n = GroundItemNode(g)
+                n.position = screen(g.position)
+                n.zPosition = 8_000
+                // Stack labels so they never overlap.
+                var y: CGFloat = 16
+                for _ in 0..<12 {
+                    n.setLabelY(y)
+                    if !groundNodes.values.contains(where: { $0.labelRect.intersects(n.labelRect) }) { break }
+                    y += 19
+                }
+                worldNode.addChild(n)
+                groundNodes[g.id] = n
+            }
+        }
+        for (id, n) in groundNodes where !present.contains(id) {
+            n.removeFromParent()
+            groundNodes[id] = nil
+        }
+
         hud.update(player: p, target: hovered.flatMap { game.monster($0) } ?? targetMonster())
+        if !inventoryPanel.isHidden { inventoryPanel.refresh(p) }
+        if !characterPanel.isHidden { characterPanel.refresh(p) }
+        syncCursorAndTooltip()
+    }
+
+    private func syncCursorAndTooltip() {
+        let p = game.player
+        if p.cursor?.id != cursorItemID {
+            cursorIcon?.removeFromParent()
+            cursorIcon = nil
+            cursorItemID = p.cursor?.id
+            if let it = p.cursor {
+                let icon = ItemVisuals.icon(it)
+                icon.zPosition = 31_000
+                icon.alpha = 0.9
+                cam.addChild(icon)
+                cursorIcon = icon
+            }
+        }
+        guard let cp = mouseCamPoint() else { return }
+        if let icon = cursorIcon, let it = p.cursor {
+            icon.position = CGPoint(x: cp.x - CGFloat(it.base.size.w) * ItemVisuals.cell / 2,
+                                    y: cp.y + CGFloat(it.base.size.h) * ItemVisuals.cell / 2)
+        }
+        // Tooltip for whatever is under the mouse.
+        var item: Item?
+        if p.cursor == nil && !inventoryPanel.isHidden {
+            switch inventoryPanel.hit(cp) {
+            case .cell(let x, let y): item = p.inventory.entry(at: x, y)?.item
+            case .slot(let s): item = p.equipment[s]
+            default: break
+            }
+        }
+        if item == nil, p.cursor == nil, let gid = hoveredGround, let g = game.groundItems.first(where: { $0.id == gid }),
+           case .item(let it) = g.content { item = it }
+        if let item {
+            tooltip.show(item, player: p, at: cp, bounds: size)
+        } else {
+            tooltip.hide()
+        }
+    }
+
+    private func message(_ text: String, color: NSColor = ItemVisuals.text) {
+        let l = SKLabelNode(fontNamed: "PingFangSC-Regular")
+        l.text = text
+        l.fontSize = 13
+        l.fontColor = color
+        for c in messages.children { c.position.y += 18 }
+        messages.addChild(l)
+        l.run(.sequence([.wait(forDuration: 2), .fadeOut(withDuration: 0.6), .removeFromParent()]))
     }
 
     private func targetMonster() -> Monster? {
@@ -235,7 +347,15 @@ final class GameScene: SKScene {
                 hud.showBanner("你倒下了", color: NSColor(calibratedRed: 0.75, green: 0.1, blue: 0.05, alpha: 1))
             case .playerRespawned:
                 player.setDead(false)
-            case .potion:
+            case .blocked(let at):
+                floatText("格挡", at: at, color: NSColor(calibratedRed: 0.7, green: 0.8, blue: 1, alpha: 1), size: 13)
+            case .pickedUp(let name):
+                message("拾取: \(name)")
+            case .inventoryFull:
+                message("物品栏已满", color: ItemVisuals.bad)
+            case .cannotEquip(let name):
+                message("无法装备 \(name)：属性不足", color: ItemVisuals.bad)
+            case .potion, .itemDropped:
                 break
             }
         }
@@ -295,8 +415,36 @@ final class GameScene: SKScene {
         return best?.0
     }
 
+    private func groundItemUnderMouse() -> Int? {
+        guard let sp = mouseScenePoint() else { return nil }
+        return groundNodes.values.filter { $0.contains(scenePoint: sp) }
+            .min { hypot($0.position.x - sp.x, $0.position.y - sp.y) < hypot($1.position.x - sp.x, $1.position.y - sp.y) }?.id
+    }
+
+    private func mouseCamPoint() -> CGPoint? {
+        guard let v = view, let mp = lastMouseInView else { return nil }
+        return convert(v.convert(mp, to: self), to: cam)
+    }
+
+    /// True if the mouse is over an open UI panel.
+    private func mouseOverUI() -> Bool {
+        guard let cp = mouseCamPoint() else { return false }
+        if !inventoryPanel.isHidden && inventoryPanel.hit(cp) != .outside { return true }
+        if !characterPanel.isHidden {
+            let l = CGPoint(x: cp.x - characterPanel.position.x, y: cp.y - characterPanel.position.y)
+            if abs(l.x) <= CharacterPanel.size.width / 2 && abs(l.y) <= CharacterPanel.size.height / 2 { return true }
+        }
+        return false
+    }
+
     private func updateHover() {
-        let h = monsterUnderMouse()
+        let g = mouseOverUI() ? nil : groundItemUnderMouse()
+        if g != hoveredGround {
+            if let old = hoveredGround { groundNodes[old]?.setHighlighted(false) }
+            if let g { groundNodes[g]?.setHighlighted(true) }
+            hoveredGround = g
+        }
+        let h = (mouseOverUI() || g != nil) ? nil : monsterUnderMouse()
         if h != hovered {
             if let old = hovered { monsterNodes[old]?.setHighlighted(false) }
             if let h { monsterNodes[h]?.setHighlighted(true) }
@@ -309,9 +457,36 @@ final class GameScene: SKScene {
     }
 
     override func mouseDown(with event: NSEvent) {
-        mouseHeld = true
         lastMouseInView = view?.convert(event.locationInWindow, from: nil)
-        if let id = monsterUnderMouse() {
+        if let cp = mouseCamPoint(), !inventoryPanel.isHidden {
+            let hit = inventoryPanel.hit(cp)
+            switch hit {
+            case .slot(let s):
+                game.equipmentClick(s); return
+            case .cell(let x, let y):
+                if let held = game.player.cursor {
+                    let (px, py) = inventoryPanel.placementCell(for: held, at: cp)
+                    game.inventoryClick(x: px, y: py)
+                } else {
+                    game.inventoryClick(x: x, y: y)
+                }
+                return
+            case .inside:
+                return
+            case .outside:
+                break
+            }
+        }
+        if mouseOverUI() { return }
+        if game.player.cursor != nil {
+            game.dropCursor()
+            return
+        }
+        mouseHeld = true
+        if let gid = groundItemUnderMouse() {
+            game.commandPickUp(gid)
+            mouseHeld = false
+        } else if let id = monsterUnderMouse() {
             game.commandAttack(id)
         } else if let t = mouseWorldPoint() {
             game.commandMove(to: t)
@@ -325,6 +500,19 @@ final class GameScene: SKScene {
     }
 
     override func mouseUp(with event: NSEvent) { mouseHeld = false }
+
+    override func rightMouseDown(with event: NSEvent) {
+        lastMouseInView = view?.convert(event.locationInWindow, from: nil)
+        guard let cp = mouseCamPoint(), !inventoryPanel.isHidden, game.player.cursor == nil else { return }
+        switch inventoryPanel.hit(cp) {
+        case .cell(let x, let y):
+            if let e = game.player.inventory.entry(at: x, y) { game.inventoryUse(itemID: e.item.id) }
+        case .slot(let s):
+            game.unequip(s)
+        default:
+            break
+        }
+    }
 
     private func showClickMarker(at p: Vec2) {
         let m = SKShapeNode(ellipseOf: CGSize(width: 28, height: 14))
@@ -353,6 +541,9 @@ final class GameScene: SKScene {
             case "r": seed &+= 1; buildLevel(); return
             case "1": game.drinkHealthPotion(); return
             case "2": game.drinkManaPotion(); return
+            case "i", "b": inventoryPanel.isHidden.toggle(); return
+            case "c": characterPanel.isHidden.toggle(); return
+            case "\u{1b}": inventoryPanel.isHidden = true; characterPanel.isHidden = true; return
             default: break
             }
         }

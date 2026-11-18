@@ -1,9 +1,12 @@
 /// The authoritative simulation. Rendering only reads from it and feeds it commands.
+import Foundation
+
 public final class GameWorld {
     public private(set) var level: GeneratedLevel
     public var player: Player
     public private(set) var monsters: [Monster] = []
     public private(set) var projectiles: [Projectile] = []
+    public private(set) var groundItems: [GroundItem] = []
     public private(set) var time = 0.0
     private var pendingEvents: [GameEvent] = []
     private var rng: SeededRNG
@@ -16,7 +19,20 @@ public final class GameWorld {
         rng = SeededRNG(seed: seed ^ 0xA5A5_5A5A)
         level = DungeonGenerator().generate(seed: seed)
         player = .newHero(at: Vec2(center: level.spawn))
+        giveStartingGear()
         if populate { spawnMonsters(kinds: monsterKinds) }
+    }
+
+    private func giveStartingGear() {
+        if let blade = ItemBases.base("short_blade") { player.equipment[.weapon] = Item(id: makeID(), base: blade) }
+        if let buckler = ItemBases.base("buckler") {
+            var b = Item(id: makeID(), base: buckler)
+            b.rolledDefense = 4
+            player.equipment[.offhand] = b
+        }
+        player.recalculate()
+        player.stats.life = player.stats.maxLife
+        player.stats.mana = player.stats.maxMana
     }
 
     /// Test/debug constructor with a hand-made level.
@@ -144,6 +160,20 @@ public final class GameWorld {
         player.stats.mana = min(player.stats.maxMana, player.stats.mana + mana + player.stats.manaRegen * dt)
 
         player.attackCooldown -= dt
+        autoPickupGold()
+        if case .groundItem(let gid)? = player.target {
+            if let g = groundItems.first(where: { $0.id == gid }) {
+                if player.position.distance(to: g.position) <= 1.0 {
+                    player.mover.stop()
+                    player.target = nil
+                    pickUp(gid)
+                } else if !player.mover.isMoving {
+                    if !player.mover.moveTo(g.position, on: level.map) { player.target = nil }
+                }
+            } else {
+                player.target = nil
+            }
+        }
         if case .monster(let id)? = player.target {
             guard let idx = monsters.firstIndex(where: { $0.id == id }), monsters[idx].isAlive else {
                 player.target = nil
@@ -178,7 +208,12 @@ public final class GameWorld {
         switch outcome {
         case .miss:
             emit(.miss(at: pos))
+        case .blocked:
+            emit(.blocked(at: pos))
         case .hit(let dmg, let crit):
+            if player.stats.lifeSteal > 0 {
+                player.stats.life = min(player.stats.maxLife, player.stats.life + dmg * player.stats.lifeSteal / 100)
+            }
             monsters[idx].stats.life -= dmg
             emit(.damage(at: pos, amount: Int(dmg.rounded()), crit: crit, toPlayer: false))
             if monsters[idx].ai == .idle { aggroPack(of: idx) }
@@ -193,6 +228,8 @@ public final class GameWorld {
         let m = monsters[idx]
         player.xp += m.kind.xp
         emit(.monsterDied(m.id, at: m.position, xp: m.kind.xp))
+        dropLoot(LootTable.roll(monsterLevel: m.kind.level, goldFind: player.goldFind,
+                                nextID: { self.makeID() }, rng: &rng), at: m.position)
         // Skittish packmates nearby may panic.
         for j in monsters.indices where monsters[j].isAlive && monsters[j].packID == m.packID
             && monsters[j].kind.behavior == .skittish && monsters[j].position.distance(to: m.position) < 6 {
@@ -213,6 +250,8 @@ public final class GameWorld {
         switch outcome {
         case .miss:
             emit(.miss(at: player.position))
+        case .blocked:
+            emit(.blocked(at: player.position))
         case .hit(let dmg, let crit):
             player.stats.life -= dmg
             emit(.damage(at: player.position, amount: Int(dmg.rounded()), crit: crit, toPlayer: true))
@@ -231,7 +270,9 @@ public final class GameWorld {
         player.deathTime = nil
         player.stats.life = player.stats.maxLife
         player.stats.mana = player.stats.maxMana
-        player.mover = Mover(position: Vec2(center: level.spawn), speed: player.mover.speed)
+        var mover = Mover(position: Vec2(center: level.spawn), speed: player.mover.speed)
+        mover.radius = player.mover.radius
+        player.mover = mover
         for i in monsters.indices where monsters[i].isAlive {
             monsters[i].ai = .idle
             monsters[i].mover.moveTo(monsters[i].home, on: level.map)
@@ -315,7 +356,12 @@ public final class GameWorld {
                                           remaining: m.kind.reach + 3, faction: .monsters,
                                           attacker: m.stats, radius: 0.15))
         } else {
-            damagePlayer(Combat.resolveAttack(attacker: m.stats, defender: player.stats, rng: &rng))
+            let outcome = Combat.resolveAttack(attacker: m.stats, defender: player.stats, rng: &rng)
+            damagePlayer(outcome)
+            if case .hit = outcome, player.stats.thorns > 0 {
+                apply(.hit(damage: player.stats.thorns, crit: false), toMonsterAt: i)
+                if !monsters[i].isAlive { return }
+            }
             if m.kind.behavior == .hitAndRun {
                 monsters[i].ai = .retreat(until: time + 0.7 + rng.unit() * 0.6)
                 monsters[i].repathTimer = 0
@@ -346,6 +392,124 @@ public final class GameWorld {
                 monsters[i].mover.slide(d.normalized * (minD - d.length), map: level.map)
             }
         }
+    }
+
+    // MARK: - Items
+
+    public func dropLoot(_ drops: [LootTable.Drop], at pos: Vec2) {
+        for (n, d) in drops.enumerated() {
+            let angle = Double(n) * 2.4 + rng.unit()
+            var p = pos + Vec2(cos(angle), sin(angle)) * (0.3 + 0.35 * Double(n % 3))
+            if !level.map.isWalkable(p.grid) { p = pos }
+            let id = makeID()
+            switch d {
+            case .gold(let g): groundItems.append(GroundItem(id: id, position: p, content: .gold(g)))
+            case .item(let it): groundItems.append(GroundItem(id: id, position: p, content: .item(it)))
+            }
+            emit(.itemDropped(id))
+        }
+    }
+
+    public func commandPickUp(_ groundID: Int) {
+        guard playerAlive, let g = groundItems.first(where: { $0.id == groundID }) else { return }
+        player.target = .groundItem(groundID)
+        if player.position.distance(to: g.position) > 1.0 { player.mover.moveTo(g.position, on: level.map) }
+    }
+
+    private func autoPickupGold() {
+        for g in groundItems {
+            if case .gold = g.content, player.position.distance(to: g.position) < 0.7 { pickUp(g.id) }
+        }
+    }
+
+    private func pickUp(_ gid: Int) {
+        guard let i = groundItems.firstIndex(where: { $0.id == gid }) else { return }
+        switch groundItems[i].content {
+        case .gold(let n):
+            player.gold += n
+            groundItems.remove(at: i)
+            emit(.pickedUp("\(n) 金币"))
+        case .item(let it):
+            if it.baseID == ItemBases.healthPotion.id && player.healthPotions < Player.beltCapacity {
+                player.healthPotions += 1
+            } else if it.baseID == ItemBases.manaPotion.id && player.manaPotions < Player.beltCapacity {
+                player.manaPotions += 1
+            } else if !player.inventory.add(it) {
+                emit(.inventoryFull)
+                return
+            }
+            groundItems.remove(at: i)
+            emit(.pickedUp(it.displayName))
+        }
+    }
+
+    public func groundItem(near p: Vec2, within r: Double = 0.5) -> GroundItem? {
+        groundItems.filter { $0.position.distance(to: p) <= r }.min { $0.position.distance(to: p) < $1.position.distance(to: p) }
+    }
+
+    /// Drop the cursor item at the player's feet.
+    public func dropCursor() {
+        guard let it = player.cursor else { return }
+        player.cursor = nil
+        let id = makeID()
+        groundItems.append(GroundItem(id: id, position: player.position + Vec2(0.3, 0.3), content: .item(it)))
+        emit(.itemDropped(id))
+    }
+
+    /// Lift an inventory item onto the cursor (or swap with the cursor item if it fits there).
+    public func inventoryClick(x: Int, y: Int) {
+        if let held = player.cursor {
+            let r = player.inventory.placeSwapping(held, x: x, y: y)
+            if r.ok { player.cursor = r.displaced }
+        } else if let e = player.inventory.entry(at: x, y) {
+            player.cursor = player.inventory.remove(id: e.item.id)
+        }
+    }
+
+    /// Click an equipment slot: equip cursor item there (swapping), or lift the equipped item.
+    public func equipmentClick(_ slot: EquipSlot) {
+        if let held = player.cursor {
+            guard EquipSlot.slots(for: held.base.category).contains(slot) else { return }
+            guard player.canEquip(held) else { emit(.cannotEquip(held.displayName)); return }
+            player.cursor = player.equipment[slot]
+            player.equipment[slot] = held
+        } else if let it = player.equipment.removeValue(forKey: slot) {
+            player.cursor = it
+        }
+        player.recalculate()
+    }
+
+    /// Right-click: use a potion or quick-equip from the inventory.
+    public func inventoryUse(itemID: Int) {
+        guard let e = player.inventory.entries.first(where: { $0.item.id == itemID }) else { return }
+        let it = e.item
+        if it.baseID == ItemBases.healthPotion.id {
+            player.inventory.remove(id: it.id); player.healthPotions += 1; drinkHealthPotion(); return
+        }
+        if it.baseID == ItemBases.manaPotion.id {
+            player.inventory.remove(id: it.id); player.manaPotions += 1; drinkManaPotion(); return
+        }
+        guard let slot = player.preferredSlot(for: it) else { return }
+        guard player.canEquip(it) else { emit(.cannotEquip(it.displayName)); return }
+        player.inventory.remove(id: it.id)
+        if let old = player.equipment[slot] {
+            if !player.inventory.place(old, x: e.x, y: e.y) && !player.inventory.add(old) {
+                // No room for the old item: undo.
+                player.inventory.place(it, x: e.x, y: e.y)
+                emit(.inventoryFull)
+                return
+            }
+        }
+        player.equipment[slot] = it
+        player.recalculate()
+    }
+
+    /// Right-click on an equipped item: move it to the inventory.
+    public func unequip(_ slot: EquipSlot) {
+        guard let it = player.equipment[slot] else { return }
+        guard player.inventory.add(it) else { emit(.inventoryFull); return }
+        player.equipment[slot] = nil
+        player.recalculate()
     }
 
     // MARK: - Projectiles

@@ -18,6 +18,9 @@ open build/AshenSigil.app
 |---|---|
 | Left click / hold | Move (A* pathfinding) / attack monster under cursor |
 | 1 / 2 | Health / mana potion (heals over time) |
+| I / B | Inventory (left click pick/place, right click equip/use) |
+| C | Character sheet |
+| Esc | Close panels |
 | WASD / arrows | Move |
 | R | Regenerate level (next seed) |
 

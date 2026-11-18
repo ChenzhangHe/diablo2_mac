@@ -40,6 +40,13 @@ public struct Resistances: Codable, Sendable, Equatable {
     }
 }
 
+public struct ElementalDamage: Codable, Sendable, Equatable {
+    public var type: DamageType
+    public var min: Double
+    public var max: Double
+    public init(_ type: DamageType, _ min: Double, _ max: Double) { self.type = type; self.min = min; self.max = max }
+}
+
 /// Everything combat needs to know about a combatant.
 public struct CombatStats: Codable, Sendable {
     public var level: Int
@@ -59,6 +66,11 @@ public struct CombatStats: Codable, Sendable {
     public var manaRegen: Double = 0      // per second
     /// Physical damage reduction in percent (capped at 50).
     public var damageReduction: Double = 0
+    /// Extra typed damage added to every attack (from affixes / skills).
+    public var elemental: [ElementalDamage] = []
+    public var lifeSteal: Double = 0      // percent of damage dealt
+    public var thorns: Double = 0         // flat damage returned to melee attackers
+    public var blockChance: Double = 0    // percent
 
     public init(level: Int, life: Double, minDamage: Double, maxDamage: Double,
                 attackRating: Double, defense: Double) {
