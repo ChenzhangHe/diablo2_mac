@@ -25,6 +25,7 @@ open build/AshenSigil.app
 | T | Skill trees (left click learn; hover + Q/W/E/R/right click to bind) |
 | P | Read a town portal scroll |
 | Tab | Automap |
+| L | Quest log |
 | Click NPC / portal / waypoint | Talk, trade, travel |
 | F5 | New game (only with `ASHEN_DEV=1`) |
 

@@ -25,6 +25,7 @@ final class GameScene: SKScene {
     private var menuMode: String?        // "waypoint" or "npc:<id>"
     private let gridPanel = GridPanel()
     private let automap = Automap()
+    private let questLog = MenuPanel(size: CGSize(width: 420, height: 380))
     /// "shop:<npc>" or "stash" while trading/stashing.
     private var tradeMode: String?
 
@@ -71,6 +72,8 @@ final class GameScene: SKScene {
         cam.addChild(gridPanel)
         automap.isHidden = true
         cam.addChild(automap)
+        questLog.isHidden = true
+        cam.addChild(questLog)
         aura.lineWidth = 2
         aura.glowWidth = 4
         aura.fillColor = .clear
@@ -560,6 +563,24 @@ final class GameScene: SKScene {
 
     // MARK: - Menus
 
+    private func refreshQuestLog() {
+        var lines: [String] = []
+        for q in Quests.all {
+            let giver = NPCs.def(q.giver)?.name ?? q.giver
+            let area = Areas.def(q.area)?.name ?? q.area
+            let state: String
+            switch game.player.quest(q.id) {
+            case .notStarted: state = "未接受 — 与\(giver)交谈"
+            case .active: state = "进行中 — 前往\(area)，击败\(q.targetName)"
+            case .complete: state = "已完成 — 返回营地找\(giver)"
+            case .rewarded: state = "✓ 已结束"
+            }
+            lines.append((q.isMain ? "【主线】" : "") + q.name)
+            lines.append("  " + state)
+        }
+        questLog.set(title: "任务日志 · 第一幕", body: lines, rows: [])
+    }
+
     private func closeMenu() {
         menuPanel.isHidden = true
         menuMode = nil
@@ -727,6 +748,7 @@ final class GameScene: SKScene {
                     floatText("复活", at: m.position, color: NSColor(calibratedRed: 0.8, green: 0.4, blue: 1, alpha: 1), size: 12)
                 }
             case .questUpdated(let qid, let st):
+                if !questLog.isHidden { refreshQuestLog() }
                 if st == .complete, let q = Quests.def(qid) {
                     let giver = NPCs.def(q.giver)?.name ?? q.giver
                     hud.showBanner("任务目标完成", color: ItemVisuals.gold)
@@ -1006,6 +1028,10 @@ final class GameScene: SKScene {
             switch k {
             case "t": skillPanel.isHidden.toggle(); return
             case "\t": automap.isHidden.toggle(); return
+            case "l":
+                questLog.isHidden.toggle()
+                if !questLog.isHidden { refreshQuestLog() }
+                return
             case "1": game.drinkHealthPotion(); return
             case "2": game.drinkManaPotion(); return
             case "i", "b": inventoryPanel.isHidden.toggle(); if inventoryPanel.isHidden { closeTrade() }; return
@@ -1015,7 +1041,7 @@ final class GameScene: SKScene {
                 }
                 return
             case "c": characterPanel.isHidden.toggle(); return
-            case "\u{1b}": closeMenu(); closeTrade(); inventoryPanel.isHidden = true; characterPanel.isHidden = true; skillPanel.isHidden = true; return
+            case "\u{1b}": questLog.isHidden = true; closeMenu(); closeTrade(); inventoryPanel.isHidden = true; characterPanel.isHidden = true; skillPanel.isHidden = true; return
             default: break
             }
         }
