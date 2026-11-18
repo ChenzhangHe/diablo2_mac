@@ -23,10 +23,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         #endif
         window.contentView = view
 
-        let scene = GameScene(size: size)
-        scene.scaleMode = .resizeFill
-        view.presentScene(scene)
-        self.scene = scene
+        let env = ProcessInfo.processInfo.environment
+        let debugRun = env["ASHEN_TITLE"] == nil && env.keys.contains { $0.hasPrefix("ASHEN_") }
+        if debugRun {
+            let scene = GameScene(size: size)
+            scene.scaleMode = .resizeFill
+            view.presentScene(scene)
+            self.scene = scene
+        } else {
+            let title = TitleScene(size: size)
+            title.scaleMode = .resizeFill
+            view.presentScene(title)
+        }
 
         window.makeKeyAndOrderFront(nil)
         Snapshot.scheduleIfRequested(view: view, window: window)

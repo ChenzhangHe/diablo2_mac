@@ -83,7 +83,8 @@ final class GameScene: SKScene {
         messages.zPosition = 20_002
         cam.addChild(messages)
 
-        buildLevel()
+        buildLevel(newGame: startNewGame)
+        if startNewGame { saveNow() }
         layoutOverlay()
     }
 
@@ -121,6 +122,8 @@ final class GameScene: SKScene {
     // MARK: - Level
 
     private let env = ProcessInfo.processInfo.environment
+    /// Set by the title screen.
+    var startNewGame = false
     /// Debug runs never touch the real save file.
     private var savingEnabled: Bool { !env.keys.contains { $0.hasPrefix("ASHEN_") } || env["ASHEN_SAVE"] != nil }
     private var saveTimer = 0.0
