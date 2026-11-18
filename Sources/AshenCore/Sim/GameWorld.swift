@@ -115,6 +115,8 @@ public final class GameWorld {
         player.repathTimer = 0
     }
 
+    public func spendStatPoint(_ a: Player.AttributeKind) { player.spendStatPoint(a) }
+
     public func drinkHealthPotion() {
         guard playerAlive, player.healthPotions > 0 else { return }
         player.healthPotions -= 1
@@ -226,8 +228,9 @@ public final class GameWorld {
         monsters[idx].deathTime = time
         monsters[idx].mover.stop()
         let m = monsters[idx]
-        player.xp += m.kind.xp
-        emit(.monsterDied(m.id, at: m.position, xp: m.kind.xp))
+        let xp = Experience.scaled(m.kind.xp, monsterLevel: m.stats.level, playerLevel: player.level)
+        emit(.monsterDied(m.id, at: m.position, xp: xp))
+        if player.gainXP(xp) > 0 { emit(.levelUp(player.level)) }
         dropLoot(LootTable.roll(monsterLevel: m.kind.level, goldFind: player.goldFind,
                                 nextID: { self.makeID() }, rng: &rng), at: m.position)
         // Skittish packmates nearby may panic.

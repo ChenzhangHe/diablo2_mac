@@ -52,6 +52,7 @@ public struct Player: Sendable {
     public var stats: CombatStats
     public var attributes: Attributes
     public var statPoints = 0
+    public var skillPoints = 0
     public var equipment: [EquipSlot: Item] = [:]
     public var inventory = Inventory()
     /// Item held on the mouse cursor (classic inventory juggling).
@@ -73,6 +74,49 @@ public struct Player: Sendable {
 
     public var position: Vec2 { mover.position }
     public var level: Int { stats.level }
+    public var xpForNextLevel: Int { Experience.total(forLevel: level + 1) }
+    public var xpIntoLevel: Double {
+        let lo = Experience.total(forLevel: level), hi = xpForNextLevel
+        return level >= Experience.maxLevel ? 1 : Double(xp - lo) / Double(max(1, hi - lo))
+    }
+
+    /// Add XP; returns number of levels gained. Leveling refills life and mana.
+    @discardableResult
+    public mutating func gainXP(_ amount: Int) -> Int {
+        guard level < Experience.maxLevel else { return 0 }
+        xp += amount
+        var gained = 0
+        while level < Experience.maxLevel && xp >= xpForNextLevel {
+            stats.level += 1
+            statPoints += Experience.statPointsPerLevel
+            skillPoints += Experience.skillPointsPerLevel
+            gained += 1
+        }
+        if gained > 0 {
+            recalculate()
+            stats.life = stats.maxLife
+            stats.mana = stats.maxMana
+        }
+        return gained
+    }
+
+    public enum AttributeKind: CaseIterable, Sendable { case strength, dexterity, vitality, energy }
+
+    public mutating func spendStatPoint(_ a: AttributeKind) {
+        guard statPoints > 0 else { return }
+        statPoints -= 1
+        switch a {
+        case .strength: attributes.strength += 1
+        case .dexterity: attributes.dexterity += 1
+        case .vitality:
+            attributes.vitality += 1
+            stats.life += heroClass.lifePerVitality
+        case .energy:
+            attributes.energy += 1
+            stats.mana += heroClass.manaPerEnergy
+        }
+        recalculate()
+    }
 
     public static func newHero(at pos: Vec2, heroClass: HeroClass = .emberguard) -> Player {
         let attrs = heroClass.start
@@ -121,6 +165,7 @@ public enum GameEvent: Sendable, Equatable {
     case miss(at: Vec2)
     case swing(attacker: EntityID?, at: Vec2, toward: Vec2)   // nil attacker = player
     case monsterDied(EntityID, at: Vec2, xp: Int)
+    case levelUp(Int)
     case playerDied
     case playerRespawned
     case potion(health: Bool)

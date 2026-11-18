@@ -345,6 +345,14 @@ final class GameScene: SKScene {
             case .playerDied:
                 player.setDead(true)
                 hud.showBanner("你倒下了", color: NSColor(calibratedRed: 0.75, green: 0.1, blue: 0.05, alpha: 1))
+            case .levelUp(let lv):
+                hud.showBanner("升级！等级 \(lv)", color: ItemVisuals.gold)
+                message("获得 5 属性点、1 技能点（C 打开角色面板分配）", color: ItemVisuals.gold)
+                let ring = SKShapeNode(circleOfRadius: 20)
+                ring.strokeColor = ItemVisuals.gold; ring.lineWidth = 3; ring.glowWidth = 6
+                ring.position = player.position; ring.zPosition = 9_500
+                worldNode.addChild(ring)
+                ring.run(.sequence([.group([.scale(to: 4, duration: 0.6), .fadeOut(withDuration: 0.6)]), .removeFromParent()]))
             case .playerRespawned:
                 player.setDead(false)
             case .blocked(let at):
