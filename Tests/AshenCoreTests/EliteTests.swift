@@ -58,7 +58,7 @@ final class EliteTests: XCTestCase {
 
     func testPopulatedLevelsContainElites() {
         var elites = 0
-        for seed in UInt64(1)...10 { elites += GameWorld(seed: seed).monsters.filter { $0.rank != .normal }.count }
+        for seed in UInt64(1)...10 { elites += GameWorld(seed: seed, startArea: "rotroot_hollow").monsters.filter { $0.rank != .normal }.count }
         XCTAssertGreaterThan(elites, 5)
     }
 }

@@ -75,3 +75,50 @@ final class GeneratorTests: XCTestCase {
         }
     }
 }
+
+final class TravelTests: XCTestCase {
+    func testStartsInTownWithNPCsAndExit() {
+        let w = GameWorld(seed: 1)
+        XCTAssertTrue(w.area.isTown)
+        XCTAssertTrue(w.monsters.isEmpty)
+        let npcs = w.interactables.filter { if case .npc = $0.kind { true } else { false } }
+        XCTAssertGreaterThanOrEqual(npcs.count, 3)
+        XCTAssertTrue(w.interactables.contains { $0.kind == .areaExit(toArea: "ashmire_fen", arrival: .entrance) })
+        XCTAssertTrue(w.player.waypoints.contains("reedford"))
+    }
+
+    func testWalkingIntoExitTravelsAndStateIsKept() {
+        let w = GameWorld(seed: 2)
+        let exit = w.interactables.first { if case .areaExit = $0.kind { true } else { false } }!
+        w.commandInteract(exit.id)
+        for _ in 0..<(60 * 30) where w.area.isTown { w.update(dt: 1.0 / 60) }
+        XCTAssertEqual(w.area.id, "ashmire_fen")
+        XCTAssertFalse(w.monsters.isEmpty)
+        XCTAssertTrue(w.monsters.allSatisfy { $0.stats.level >= 1 })
+        let count = w.monsters.count
+        // Kill one, leave, come back: still dead.
+        w.apply(.hit(damage: 9999, crit: false), toMonsterAt: 0)
+        w.travel(to: "reedford", arrival: .exit)
+        XCTAssertTrue(w.area.isTown)
+        w.travel(to: "ashmire_fen", arrival: .entrance)
+        XCTAssertEqual(w.monsters.count, count)
+        XCTAssertFalse(w.monsters[0].isAlive)
+    }
+
+    func testMonstersScaleWithAreaLevel() {
+        let w = GameWorld(seed: 3, startArea: "abbey_crypt")
+        XCTAssertTrue(w.monsters.filter { $0.rank == .normal }.allSatisfy { $0.stats.level >= 7 })
+    }
+
+    func testWaypointTravel() {
+        let w = GameWorld(seed: 4)
+        w.useWaypoint(to: "rotroot_hollow")
+        XCTAssertTrue(w.area.isTown, "undiscovered waypoint must not work")
+        w.travel(to: "rotroot_hollow", arrival: .entrance)
+        XCTAssertTrue(w.player.waypoints.contains("rotroot_hollow"))
+        w.travel(to: "reedford", arrival: .entrance)
+        w.useWaypoint(to: "rotroot_hollow")
+        XCTAssertEqual(w.area.id, "rotroot_hollow")
+        XCTAssertLessThan(w.player.position.distance(to: Vec2(center: w.level.waypoint!)), 3)
+    }
+}

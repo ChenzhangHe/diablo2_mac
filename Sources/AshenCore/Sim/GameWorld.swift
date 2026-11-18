@@ -3,6 +3,11 @@ import Foundation
 
 public final class GameWorld {
     public private(set) var level: GeneratedLevel
+    public private(set) var area: AreaDef
+    public private(set) var interactables: [Interactable] = []
+    public let seed: UInt64
+    /// Saved state of areas the player has left, so revisiting keeps kills and loot.
+    private var visited: [String: AreaState] = [:]
     public var player: Player
     public internal(set) var monsters: [Monster] = []
     public private(set) var projectiles: [Projectile] = []
@@ -15,12 +20,19 @@ public final class GameWorld {
     public static let respawnDelay = 2.5
     public static let corpseLifetime = 30.0
 
-    public init(seed: UInt64, monsterKinds: [MonsterKind] = Bestiary.actOne, populate: Bool = true) {
+    public init(seed: UInt64, startArea: String = "reedford") {
+        self.seed = seed
         rng = SeededRNG(seed: seed ^ 0xA5A5_5A5A)
-        level = DungeonGenerator().generate(seed: seed)
+        area = Areas.def(startArea) ?? Areas.actOne[0]
+        level = LevelGenerator.generate(area, seed: Self.areaSeed(seed, area.id))
         player = .newHero(at: Vec2(center: level.spawn))
         giveStartingGear()
-        if populate { spawnMonsters(kinds: monsterKinds) }
+        enterFresh()
+        player.waypoints.insert(Areas.actOne[0].id)
+    }
+
+    static func areaSeed(_ seed: UInt64, _ id: String) -> UInt64 {
+        id.unicodeScalars.reduce(seed &* 0x100000001B3) { ($0 ^ UInt64($1.value)) &* 0x100000001B3 }
     }
 
     private func giveStartingGear() {
@@ -37,7 +49,10 @@ public final class GameWorld {
 
     /// Test/debug constructor with a hand-made level.
     public init(level: GeneratedLevel, seed: UInt64 = 1) {
+        self.seed = seed
         rng = SeededRNG(seed: seed)
+        area = AreaDef(id: "test", name: "测试", act: 1, level: 1, style: .dungeon, theme: .crypt, size: level.map.width,
+                       monsters: [], hasWaypoint: false)
         self.level = level
         player = .newHero(at: Vec2(center: level.spawn))
     }
@@ -54,11 +69,12 @@ public final class GameWorld {
     // MARK: - Spawning
 
     private func spawnMonsters(kinds: [MonsterKind]) {
+        guard !kinds.isEmpty else { return }
         var packID = 0
         for room in level.rooms.dropFirst() {           // keep the spawn room safe
             let packs = room.w * room.h > 60 ? 2 : 1
             for _ in 0..<packs {
-                let kind = kinds[rng.int(0...(kinds.count - 1))]
+                let kind = kinds[rng.int(0...(kinds.count - 1))].scaled(to: max(1, area.level))
                 let ids = spawnPack(kind: kind, in: room, packID: packID)
                 let roll = rng.unit()
                 if roll < 0.08 { makeUniquePack(ids) } else if roll < 0.18 { makeChampionPack(ids) }
@@ -204,6 +220,20 @@ public final class GameWorld {
                     pickUp(gid)
                 } else if !player.mover.isMoving {
                     if !player.mover.moveTo(g.position, on: level.map) { player.target = nil }
+                }
+            } else {
+                player.target = nil
+            }
+        }
+        if case .interactable(let iid)? = player.target {
+            if let it = interactable(iid) {
+                if player.position.distance(to: it.position) <= 1.4 {
+                    player.mover.stop()
+                    player.target = nil
+                    interact(it)
+                    return
+                } else if !player.mover.isMoving {
+                    if !player.mover.moveTo(it.position, on: level.map) { player.target = nil }
                 }
             } else {
                 player.target = nil
@@ -486,6 +516,118 @@ public final class GameWorld {
                 monsters[i].mover.slide(d.normalized * (minD - d.length), map: level.map)
             }
         }
+    }
+
+    // MARK: - Areas & interaction
+
+    struct AreaState {
+        var level: GeneratedLevel
+        var monsters: [Monster]
+        var groundItems: [GroundItem]
+        var interactables: [Interactable]
+    }
+
+    public enum Arrival: Sendable, Equatable { case entrance, exit, waypoint, position(Vec2) }
+
+    /// Populate the current (new) area: monsters, portals, waypoint, NPCs.
+    private func enterFresh() {
+        monsters = []
+        groundItems = []
+        projectiles = []
+        interactables = []
+        spawnMonsters(kinds: area.monsters)
+        guard let idx = Areas.index(of: area.id) else { return }
+        let all = Areas.actOne
+        if idx + 1 < all.count, area.style != .arena {
+            let next = all[idx + 1]
+            interactables.append(Interactable(id: makeID(), kind: .areaExit(toArea: next.id, arrival: .entrance),
+                                              position: Vec2(center: level.exit), name: "前往 " + next.name))
+        }
+        if idx > 0 {
+            let prev = all[idx - 1]
+            interactables.append(Interactable(id: makeID(), kind: .areaExit(toArea: prev.id, arrival: .exit),
+                                              position: Vec2(center: level.spawn) + Vec2(-0.6, -0.6), name: "返回 " + prev.name))
+        }
+        if let wp = level.waypoint {
+            interactables.append(Interactable(id: makeID(), kind: .waypoint, position: Vec2(center: wp), name: "传送小站"))
+        }
+        for (key, spot) in level.markers {
+            guard let npc = NPCs.byMarker[key] else { continue }
+            interactables.append(Interactable(id: makeID(), kind: .npc(npc.id), position: Vec2(center: spot), name: npc.name))
+        }
+        // Keep monsters away from the entrance.
+        monsters.removeAll { $0.position.distance(to: Vec2(center: level.spawn)) < 8 }
+    }
+
+    /// Move the player to another area. Leaving saves the current one.
+    public func travel(to areaID: String, arrival: Arrival) {
+        guard let target = Areas.def(areaID) else { return }
+        visited[area.id] = AreaState(level: level, monsters: monsters, groundItems: groundItems, interactables: interactables)
+        area = target
+        if let saved = visited[areaID] {
+            level = saved.level
+            monsters = saved.monsters
+            groundItems = saved.groundItems
+            interactables = saved.interactables
+            projectiles = []
+        } else {
+            level = LevelGenerator.generate(target, seed: Self.areaSeed(seed, target.id))
+            enterFresh()
+        }
+        let spot: Vec2
+        switch arrival {
+        case .entrance: spot = arrivalSpot(near: level.spawn)
+        case .exit: spot = arrivalSpot(near: level.exit)
+        case .waypoint: spot = arrivalSpot(near: level.waypoint ?? level.spawn)
+        case .position(let p): spot = p
+        }
+        var mover = Mover(position: spot, speed: player.mover.speed)
+        mover.radius = player.mover.radius
+        player.mover = mover
+        player.target = nil
+        player.action = .none
+        if target.hasWaypoint { player.waypoints.insert(target.id) }
+        if target.isTown {
+            player.stats.life = player.stats.maxLife   // the camp's fire mends you
+        }
+        emit(.areaEntered(target.id))
+    }
+
+    /// A walkable tile next to `p`, so the player doesn't land on top of a portal.
+    private func arrivalSpot(near p: GridPoint) -> Vec2 {
+        let d = level.map.distances(from: p)
+        let ring = d.filter { $0.value == 2 }.map(\.key).sorted { ($0.x, $0.y) < ($1.x, $1.y) }
+        return Vec2(center: ring.first ?? p)
+    }
+
+    public func interactable(_ id: Int) -> Interactable? { interactables.first { $0.id == id } }
+
+    public func commandInteract(_ id: Int) {
+        guard playerAlive, player.action == .none, let it = interactable(id) else { return }
+        player.target = .interactable(id)
+        if player.position.distance(to: it.position) > 1.4 { player.mover.moveTo(it.position, on: level.map) }
+    }
+
+    func interact(_ it: Interactable) {
+        switch it.kind {
+        case .areaExit(let to, let arrival):
+            travel(to: to, arrival: arrival)
+        case .waypoint:
+            player.waypoints.insert(area.id)
+            emit(.openWaypoints)
+        case .npc(let npc):
+            emit(.talk(npc))
+        case .townPortal(let backArea, let backPos):
+            if area.isTown { travel(to: backArea, arrival: .position(backPos)) }
+            else { travel(to: Areas.actOne[0].id, arrival: .entrance) }
+            interactables.removeAll { if case .townPortal = $0.kind { true } else { false } }
+        }
+    }
+
+    /// Waypoint travel to an already discovered area.
+    public func useWaypoint(to areaID: String) {
+        guard player.waypoints.contains(areaID) else { return }
+        travel(to: areaID, arrival: .waypoint)
     }
 
     // MARK: - Items

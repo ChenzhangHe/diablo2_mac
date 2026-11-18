@@ -83,7 +83,7 @@ final class CombatTests: XCTestCase {
     }
 
     func testPopulatedWorldHasMonsters() {
-        let w = GameWorld(seed: 1)
+        let w = GameWorld(seed: 1, startArea: "rotroot_hollow")
         XCTAssertGreaterThan(w.monsters.count, 10)
         XCTAssertTrue(w.monsters.allSatisfy { w.level.map.isWalkable($0.position.grid) })
     }

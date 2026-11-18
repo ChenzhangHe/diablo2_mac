@@ -82,7 +82,7 @@ final class ItemTests: XCTestCase {
     }
 
     func testMonstersDropLootAndPlayerPicksUp() {
-        let w = GameWorld(seed: 3)
+        let w = GameWorld(seed: 3, startArea: "rotroot_hollow")
         var rng = SeededRNG(seed: 4)
         var id = 10_000
         let item = ItemGenerator().generate(id: 1, itemLevel: 5, rng: &rng, forcedQuality: .magic,
@@ -98,7 +98,7 @@ final class ItemTests: XCTestCase {
     }
 
     func testQuickEquipSwapsIntoInventory() {
-        let w = GameWorld(seed: 3)
+        let w = GameWorld(seed: 3, startArea: "rotroot_hollow")
         var better = Item(id: 999, base: ItemBases.base("short_blade")!, quality: .magic, itemLevel: 5)
         better.modifiers = [Modifier(.enhancedDamage, 40)]
         better.prefixNames = ["锋利的"]

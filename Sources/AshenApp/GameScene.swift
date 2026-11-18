@@ -17,8 +17,12 @@ final class GameScene: SKScene {
     private var cursorIcon: SKNode?
     private var cursorItemID: Int?
     private var groundNodes: [Int: GroundItemNode] = [:]
+    private var interactNodes: [Int: InteractableNode] = [:]
+    private var hoveredInteract: Int?
     private var hoveredGround: Int?
     private let messages = SKNode()
+    private let menuPanel = MenuPanel(size: CGSize(width: 360, height: 400))
+    private var menuMode: String?        // "waypoint" or "npc:<id>"
 
     private var seed: UInt64 = 1
     private var game: GameWorld!
@@ -57,6 +61,8 @@ final class GameScene: SKScene {
         skillPanel.isHidden = true
         cam.addChild(skillPanel)
         cam.addChild(hotbar)
+        menuPanel.isHidden = true
+        cam.addChild(menuPanel)
         aura.lineWidth = 2
         aura.glowWidth = 4
         aura.fillColor = .clear
@@ -91,29 +97,72 @@ final class GameScene: SKScene {
 
     // MARK: - Level
 
+    /// New game: fresh world starting in camp.
     private func buildLevel() {
+        let start = ProcessInfo.processInfo.environment["ASHEN_START_AREA"] ?? "reedford"
+        game = GameWorld(seed: seed, startArea: start)
+        buildArea()
+        if ProcessInfo.processInfo.environment["ASHEN_DEBUG_WALK_TO_EXIT"] != nil {
+            game.commandMove(to: Vec2(center: game.level.exit))
+        }
+        if ProcessInfo.processInfo.environment["ASHEN_DEBUG_LOOT"] != nil { debugLoot() }
+        if ProcessInfo.processInfo.environment["ASHEN_DEBUG_SKILLS"] != nil { debugSkills() }
+        syncWorld()
+    }
+
+    /// Rebuild all nodes for the world's current area.
+    private func buildArea() {
         worldNode.removeAllChildren()
         walls.removeAll()
         fadedWalls.removeAll()
         monsterNodes.removeAll()
         projectileNodes.removeAll()
         groundNodes.removeAll()
+        interactNodes.removeAll()
+        hoveredInteract = nil
 
-        game = GameWorld(seed: seed)
         let map = game.level.map
-        var rng = SeededRNG(seed: seed &* 31)
+        let theme = game.area.theme
+        var rng = SeededRNG(seed: seed &* 31 &+ UInt64(map.width))
+        let floors = ThemeTextures.floors(theme)
+        let tileSize = CGSize(width: Iso.tileWidth, height: Iso.tileHeight)
+
+        func floor(_ p: GridPoint, _ tex: SKTexture) {
+            let n = SKSpriteNode(texture: tex)
+            n.size = tileSize
+            n.position = screen(Vec2(center: p))
+            n.zPosition = -1
+            worldNode.addChild(n)
+        }
 
         for p in map.allPoints {
             let pos = screen(Vec2(center: p))
             switch map[p] {
-            case .floor, .door, .path, .tree, .rock, .water:
-                let n = SKSpriteNode(texture: Textures.floors[rng.int(0...3)])
-                n.size = CGSize(width: Iso.tileWidth, height: Iso.tileHeight)
+            case .floor, .door:
+                floor(p, floors[rng.int(0...3)])
+            case .path:
+                floor(p, ThemeTextures.path(theme)[rng.int(0...1)])
+            case .water:
+                floor(p, ThemeTextures.water(theme))
+            case .rock:
+                floor(p, floors[rng.int(0...3)])
+                let n = SKSpriteNode(texture: ThemeTextures.rock(theme))
+                n.size = CGSize(width: Textures.tw, height: Textures.th + ThemeTextures.rockHeight)
+                n.anchorPoint = ThemeTextures.rockAnchor
                 n.position = pos
-                n.zPosition = -1
+                n.zPosition = depthZ(Vec2(center: p))
                 worldNode.addChild(n)
+            case .tree:
+                floor(p, floors[rng.int(0...3)])
+                let n = SKSpriteNode(texture: ThemeTextures.trees(theme)[rng.int(0...2)])
+                n.size = CGSize(width: Textures.tw, height: ThemeTextures.treeHeight)
+                n.anchorPoint = ThemeTextures.treeAnchor
+                n.position = pos + CGPoint(x: CGFloat(rng.unit() * 8 - 4), y: 0)
+                n.zPosition = depthZ(Vec2(center: p))
+                worldNode.addChild(n)
+                walls[p] = n
             case .wall:
-                let n = SKSpriteNode(texture: Textures.wall)
+                let n = SKSpriteNode(texture: ThemeTextures.wall(theme))
                 n.size = CGSize(width: Textures.tw, height: Textures.th + Textures.wallHeight)
                 n.anchorPoint = Textures.wallAnchor
                 n.position = pos
@@ -125,22 +174,20 @@ final class GameScene: SKScene {
             }
         }
 
-        let portal = SKSpriteNode(texture: Textures.portal)
-        portal.position = screen(Vec2(center: game.level.exit))
-        portal.zPosition = -0.5
-        portal.run(.repeatForever(.sequence([.fadeAlpha(to: 0.4, duration: 0.9), .fadeAlpha(to: 1, duration: 0.9)])))
-        worldNode.addChild(portal)
+        for it in game.interactables {
+            let n = InteractableNode(it)
+            n.position = screen(it.position)
+            n.zPosition = depthZ(it.position)
+            worldNode.addChild(n)
+            interactNodes[it.id] = n
+        }
 
-        player.setDead(false)
+        player.setDead(!game.playerAlive)
         worldNode.addChild(player)
         worldNode.addChild(aura)
-        if ProcessInfo.processInfo.environment["ASHEN_DEBUG_WALK_TO_EXIT"] != nil {
-            game.commandMove(to: Vec2(center: game.level.exit))
-        }
-        if ProcessInfo.processInfo.environment["ASHEN_DEBUG_LOOT"] != nil { debugLoot() }
-        if ProcessInfo.processInfo.environment["ASHEN_DEBUG_SKILLS"] != nil { debugSkills() }
-        syncWorld()
-        infoLabel.text = "灰烬圣印 Ashen Sigil · M4   seed \(seed)   左键 移动/攻击/拾取 · 右键/QWER 技能 · 1/2 药剂 · I 物品 · C 角色 · T 技能 · F5 新地图"
+        infoLabel.text = "灰烬圣印 · \(game.area.name)" + (game.area.isTown ? "" : "  (区域等级 \(game.area.level))")
+            + "    左键 移动/攻击/拾取/交互 · 右键/QWER 技能 · 1/2 药剂 · I 物品 · C 角色 · T 技能"
+        hud.showBanner(game.area.name, color: ItemVisuals.text)
     }
 
     private func debugSkills() {
@@ -309,6 +356,19 @@ final class GameScene: SKScene {
             groundNodes[id] = nil
         }
 
+        var liveIt = Set<Int>()
+        for it in game.interactables {
+            liveIt.insert(it.id)
+            if interactNodes[it.id] == nil {
+                let n = InteractableNode(it)
+                n.position = screen(it.position)
+                n.zPosition = depthZ(it.position)
+                worldNode.addChild(n)
+                interactNodes[it.id] = n
+            }
+        }
+        for (id, n) in interactNodes where !liveIt.contains(id) { n.removeFromParent(); interactNodes[id] = nil }
+
         hud.update(player: p, target: hovered.flatMap { game.monster($0) } ?? targetMonster())
         if !inventoryPanel.isHidden { inventoryPanel.refresh(p) }
         if !characterPanel.isHidden { characterPanel.refresh(p) }
@@ -443,6 +503,67 @@ final class GameScene: SKScene {
         }
     }
 
+    // MARK: - Menus
+
+    private func closeMenu() {
+        menuPanel.isHidden = true
+        menuMode = nil
+    }
+
+    private func openWaypointMenu() {
+        let rows = Areas.actOne.filter(\.hasWaypoint).map { a in
+            (a.id, (a.id == game.area.id ? "▸ " : "") + a.name + (game.player.waypoints.contains(a.id) ? "" : "  (未发现)"),
+             game.player.waypoints.contains(a.id) && a.id != game.area.id)
+        }
+        menuPanel.set(title: "传送小站 · 第一幕", body: ["选择目的地"], rows: rows + [("close", "离开", true)])
+        menuMode = "waypoint"
+        menuPanel.isHidden = false
+    }
+
+    private func openNPCMenu(_ id: String) {
+        guard let npc = NPCs.def(id) else { return }
+        var rows: [(String, String, Bool)] = []
+        if npc.services.contains(.trade) { rows.append(("trade", "交易", true)) }
+        if npc.services.contains(.heal) { rows.append(("heal", "治疗", true)) }
+        if npc.services.contains(.stash) { rows.append(("stash", "打开储物箱", true)) }
+        rows.append(("close", "离开", true))
+        menuPanel.set(title: npc.name, body: wrap(npc.greeting, 20), rows: rows)
+        menuMode = "npc:" + id
+        menuPanel.isHidden = false
+    }
+
+    private func wrap(_ text: String, _ width: Int) -> [String] {
+        var lines: [String] = [], cur = ""
+        for ch in text {
+            cur.append(ch)
+            if cur.count >= width { lines.append(cur); cur = "" }
+        }
+        if !cur.isEmpty { lines.append(cur) }
+        return lines
+    }
+
+    private func menuSelect(_ row: String) {
+        guard let mode = menuMode else { return }
+        if row == "close" { closeMenu(); return }
+        if mode == "waypoint" {
+            closeMenu()
+            game.useWaypoint(to: row)
+            return
+        }
+        switch row {
+        case "heal":
+            game.player.stats.life = game.player.stats.maxLife
+            game.player.stats.mana = game.player.stats.maxMana
+            message("你感到焕然一新", color: ItemVisuals.gold)
+        case "trade":
+            message("商店即将开张……", color: ItemVisuals.text)
+        case "stash":
+            message("储物箱即将开放……", color: ItemVisuals.text)
+        default:
+            break
+        }
+    }
+
     private func message(_ text: String, color: NSColor = ItemVisuals.text) {
         let l = SKLabelNode(fontNamed: "PingFangSC-Regular")
         l.text = text
@@ -524,6 +645,13 @@ final class GameScene: SKScene {
                 if let m = game.monster(id) {
                     floatText("复活", at: m.position, color: NSColor(calibratedRed: 0.8, green: 0.4, blue: 1, alpha: 1), size: 12)
                 }
+            case .areaEntered:
+                closeMenu()
+                buildArea()
+            case .openWaypoints:
+                openWaypointMenu()
+            case .talk(let npc):
+                openNPCMenu(npc)
             case .potion, .itemDropped:
                 break
             }
@@ -601,10 +729,22 @@ final class GameScene: SKScene {
         if !inventoryPanel.isHidden && inventoryPanel.hit(cp) != .outside { return true }
         if !characterPanel.isHidden && characterPanel.contains(camPoint: cp) { return true }
         if !skillPanel.isHidden && skillPanel.contains(camPoint: cp) { return true }
+        if !menuPanel.isHidden && menuPanel.contains(camPoint: cp) { return true }
         return false
     }
 
+    private func interactableUnderMouse() -> Int? {
+        guard let sp = mouseScenePoint() else { return nil }
+        return interactNodes.values.compactMap { n in n.hitTest(scenePoint: sp).map { (n.id, $0) } }.min { $0.1 < $1.1 }?.0
+    }
+
     private func updateHover() {
+        let ih = mouseOverUI() ? nil : interactableUnderMouse()
+        if ih != hoveredInteract {
+            if let old = hoveredInteract { interactNodes[old]?.setHighlighted(false) }
+            if let ih { interactNodes[ih]?.setHighlighted(true) }
+            hoveredInteract = ih
+        }
         let g = mouseOverUI() ? nil : groundItemUnderMouse()
         if g != hoveredGround {
             if let old = hoveredGround { groundNodes[old]?.setHighlighted(false) }
@@ -644,6 +784,13 @@ final class GameScene: SKScene {
                 break
             }
         }
+        if let cp = mouseCamPoint(), !menuPanel.isHidden {
+            if menuPanel.contains(camPoint: cp) {
+                if let r = menuPanel.row(at: cp) { menuSelect(r) }
+                return
+            }
+            closeMenu()
+        }
         if let cp = mouseCamPoint(), !skillPanel.isHidden, skillPanel.contains(camPoint: cp) {
             if let sid = skillPanel.skill(at: cp), let err = game.player.learnSkill(sid) {
                 message(learnErrorText(err), color: ItemVisuals.bad)
@@ -662,6 +809,9 @@ final class GameScene: SKScene {
         mouseHeld = true
         if let gid = groundItemUnderMouse() {
             game.commandPickUp(gid)
+            mouseHeld = false
+        } else if let iid = interactableUnderMouse(), monsterUnderMouse() == nil {
+            game.commandInteract(iid)
             mouseHeld = false
         } else if let id = monsterUnderMouse() {
             game.commandAttack(id)
@@ -751,7 +901,7 @@ final class GameScene: SKScene {
             case "2": game.drinkManaPotion(); return
             case "i", "b": inventoryPanel.isHidden.toggle(); return
             case "c": characterPanel.isHidden.toggle(); return
-            case "\u{1b}": inventoryPanel.isHidden = true; characterPanel.isHidden = true; skillPanel.isHidden = true; return
+            case "\u{1b}": closeMenu(); inventoryPanel.isHidden = true; characterPanel.isHidden = true; skillPanel.isHidden = true; return
             default: break
             }
         }

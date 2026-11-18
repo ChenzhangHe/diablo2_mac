@@ -87,6 +87,21 @@ public struct Monster: Sendable, Identifiable {
 public enum PlayerTarget: Sendable, Equatable {
     case monster(EntityID)
     case groundItem(Int)
+    case interactable(Int)
+}
+
+/// Things in the world you click to use: portals, waypoints, NPCs.
+public struct Interactable: Sendable, Identifiable {
+    public enum Kind: Sendable, Equatable {
+        case areaExit(toArea: String, arrival: GameWorld.Arrival)
+        case waypoint
+        case npc(String)
+        case townPortal(backArea: String, backPosition: Vec2)
+    }
+    public let id: Int
+    public let kind: Kind
+    public let position: Vec2
+    public let name: String
 }
 
 public struct Player: Sendable {
@@ -127,6 +142,8 @@ public struct Player: Sendable {
     public var deathTime: Double?
     public var xp = 0
     public var chilledUntil = 0.0
+    /// Discovered waypoints (area ids).
+    public var waypoints: Set<String> = []
 
     public var position: Vec2 { mover.position }
     public var level: Int { stats.level }
@@ -257,6 +274,9 @@ public enum GameEvent: Sendable, Equatable {
     case monsterDied(EntityID, at: Vec2, xp: Int)
     case levelUp(Int)
     case resurrected(EntityID, by: EntityID)
+    case areaEntered(String)
+    case openWaypoints
+    case talk(String)
     case playerDied
     case playerRespawned
     case potion(health: Bool)
