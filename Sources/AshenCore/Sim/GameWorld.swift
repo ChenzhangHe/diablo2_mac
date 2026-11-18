@@ -6,6 +6,10 @@ public final class GameWorld {
     public private(set) var area: AreaDef
     public private(set) var interactables: [Interactable] = []
     public let seed: UInt64
+    /// Explored tiles per area (automap).
+    public private(set) var explored: [String: Set<GridPoint>] = [:]
+    public static let revealRadius = 10
+    private var lastRevealCenter: GridPoint?
     /// Vendor stock by NPC id; restocked whenever the player enters town.
     public private(set) var vendors: [String: Inventory] = [:]
     /// Saved state of areas the player has left, so revisiting keeps kills and loot.
@@ -189,8 +193,25 @@ public final class GameWorld {
 
     // MARK: - Tick
 
+    public var exploredHere: Set<GridPoint> { explored[area.id] ?? [] }
+
+    /// Mark tiles around the player as explored.
+    func reveal() {
+        let c = player.position.grid
+        guard c != lastRevealCenter else { return }
+        lastRevealCenter = c
+        let r = Self.revealRadius
+        var set = explored[area.id] ?? []
+        for dy in -r...r { for dx in -r...r where dx * dx + dy * dy <= r * r {
+            let p = GridPoint(c.x + dx, c.y + dy)
+            if level.map.contains(p) && level.map[p] != .void { set.insert(p) }
+        } }
+        explored[area.id] = set
+    }
+
     public func update(dt: Double) {
         time += dt
+        reveal()
         updatePlayer(dt)
         for i in monsters.indices where monsters[i].isAlive { updateMonster(i, dt) }
         separateMonsters()
@@ -600,6 +621,7 @@ public final class GameWorld {
                                                   name: "传送门 → " + (Areas.def(portal.area)?.name ?? "")))
             }
         }
+        lastRevealCenter = nil
         emit(.areaEntered(target.id))
     }
 

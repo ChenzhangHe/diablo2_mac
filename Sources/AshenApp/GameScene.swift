@@ -24,6 +24,7 @@ final class GameScene: SKScene {
     private let menuPanel = MenuPanel(size: CGSize(width: 360, height: 400))
     private var menuMode: String?        // "waypoint" or "npc:<id>"
     private let gridPanel = GridPanel()
+    private let automap = Automap()
     /// "shop:<npc>" or "stash" while trading/stashing.
     private var tradeMode: String?
 
@@ -68,6 +69,8 @@ final class GameScene: SKScene {
         cam.addChild(menuPanel)
         gridPanel.isHidden = true
         cam.addChild(gridPanel)
+        automap.isHidden = true
+        cam.addChild(automap)
         aura.lineWidth = 2
         aura.glowWidth = 4
         aura.fillColor = .clear
@@ -113,6 +116,7 @@ final class GameScene: SKScene {
         }
         if ProcessInfo.processInfo.environment["ASHEN_DEBUG_LOOT"] != nil { debugLoot() }
         if ProcessInfo.processInfo.environment["ASHEN_DEBUG_SKILLS"] != nil { debugSkills() }
+        if ProcessInfo.processInfo.environment["ASHEN_DEBUG_AUTOMAP"] != nil { automap.isHidden = false }
         if ProcessInfo.processInfo.environment["ASHEN_DEBUG_SHOP"] != nil {
             game.player.gold = 800
             openTrade("shop:smith")
@@ -393,6 +397,7 @@ final class GameScene: SKScene {
             gridPanel.show(title: title, footer: footer, inventory: inv)
         }
         hotbar.update(p, time: game.time)
+        if !automap.isHidden { automap.update(game) }
         updateAura(p)
         syncCursorAndTooltip()
     }
@@ -965,6 +970,7 @@ final class GameScene: SKScene {
         if !event.isARepeat {
             switch k {
             case "t": skillPanel.isHidden.toggle(); return
+            case "\t": automap.isHidden.toggle(); return
             case "1": game.drinkHealthPotion(); return
             case "2": game.drinkManaPotion(); return
             case "i", "b": inventoryPanel.isHidden.toggle(); if inventoryPanel.isHidden { closeTrade() }; return
