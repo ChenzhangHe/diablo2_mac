@@ -18,6 +18,8 @@ public enum Stat: String, Codable, Sendable, CaseIterable {
     case goldFind                // %
     case critChance              // %
     case damageReduction         // %
+    case blockChance             // % (skills)
+    case lifePercent, manaPercent // % max life / mana (skills)
 }
 
 public struct Modifier: Codable, Sendable, Equatable {
@@ -55,6 +57,9 @@ public struct Modifier: Codable, Sendable, Equatable {
         case .goldFind: "+\(value)% 额外金币"
         case .critChance: "+\(value)% 暴击几率"
         case .damageReduction: "物理伤害减免 \(value)%"
+        case .blockChance: "+\(value)% 格挡几率"
+        case .lifePercent: "+\(value)% 最大生命"
+        case .manaPercent: "+\(value)% 最大法力"
         }
     }
 }

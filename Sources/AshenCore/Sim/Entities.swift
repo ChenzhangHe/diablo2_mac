@@ -53,6 +53,15 @@ public struct Player: Sendable {
     public var attributes: Attributes
     public var statPoints = 0
     public var skillPoints = 0
+    public var skills = SkillBook()
+    public var buffs: [Buff] = []
+    /// Skill bound to each hotbar key ("rmb", "q", "w", "e", "r").
+    public var hotbar: [String: String] = [:]
+    public static let hotbarKeys = ["rmb", "q", "w", "e", "r"]
+    public var cooldowns: [String: Double] = [:]
+    public var absorbPool = 0.0
+    public var frenzyStacks = 0
+    public var frenzyExpires = 0.0
     public var equipment: [EquipSlot: Item] = [:]
     public var inventory = Inventory()
     /// Item held on the mouse cursor (classic inventory juggling).
@@ -100,6 +109,22 @@ public struct Player: Sendable {
         return gained
     }
 
+    public var hasShield: Bool { equipment[.offhand]?.base.category == .shield }
+
+    /// Spend a skill point. Newly learned active skills auto-bind to a free hotbar key.
+    @discardableResult
+    public mutating func learnSkill(_ id: String) -> SkillBook.LearnError? {
+        if let err = skills.learnError(id, characterLevel: level, points: skillPoints) { return err }
+        let wasNew = skills.level(id) == 0
+        skills.levels[id, default: 0] += 1
+        skillPoints -= 1
+        if wasNew, Skills.def(id)?.isActive == true, let free = Player.hotbarKeys.first(where: { hotbar[$0] == nil }) {
+            hotbar[free] = id
+        }
+        recalculate()
+        return nil
+    }
+
     public enum AttributeKind: CaseIterable, Sendable { case strength, dexterity, vitality, energy }
 
     public mutating func spendStatPoint(_ a: AttributeKind) {
@@ -128,8 +153,13 @@ public struct Player: Sendable {
 
     /// Re-derive combat stats after gear/attribute/level changes.
     public mutating func recalculate() {
+        var extra = skills.passiveModifiers + buffs.flatMap(\.modifiers)
+        if frenzyStacks > 0 {
+            extra.append(Modifier(.attackSpeed, frenzyStacks * 8))
+            extra.append(Modifier(.moveSpeed, frenzyStacks * 5))
+        }
         let r = StatCalculator.compute(heroClass: heroClass, level: stats.level, attributes: attributes,
-                                       equipment: equipment, current: stats)
+                                       equipment: equipment, extra: extra, current: stats)
         stats = r.stats
         mover.speed = r.moveSpeed
         goldFind = r.goldFind
@@ -145,6 +175,12 @@ public struct Player: Sendable {
         let slots = EquipSlot.slots(for: item.base.category)
         return slots.first { equipment[$0] == nil } ?? slots.first
     }
+}
+
+public struct Buff: Sendable, Equatable {
+    public let skillID: String
+    public var expires: Double
+    public var modifiers: [Modifier]
 }
 
 public enum Faction: Sendable { case player, monsters }

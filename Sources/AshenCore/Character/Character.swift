@@ -35,8 +35,10 @@ public enum StatCalculator {
 
     /// Rebuild combat stats from class, level, attributes and gear. Keeps current life/mana (clamped).
     public static func compute(heroClass c: HeroClass, level: Int, attributes base: Attributes,
-                               equipment: [EquipSlot: Item], current: CombatStats?) -> (stats: CombatStats, moveSpeed: Double, goldFind: Double) {
-        let g = gearModifiers(equipment)
+                               equipment: [EquipSlot: Item], extra: [Modifier] = [],
+                               current: CombatStats?) -> (stats: CombatStats, moveSpeed: Double, goldFind: Double) {
+        var g = gearModifiers(equipment)
+        for m in extra { g[m.stat, default: 0] += m.value }
         func v(_ s: Stat) -> Int { g[s] ?? 0 }
         let str = base.strength + v(.strength)
         let dex = base.dexterity + v(.dexterity)
@@ -45,13 +47,20 @@ public enum StatCalculator {
 
         let weapon = equipment[.weapon]
         let wd = weapon?.weaponDamage ?? 1...3
-        let strBonus = 1 + Double(str) / 100
+        // Item ED is baked into weaponDamage; skill ED stacks additively with strength.
+        let skillEDValue = extra.filter { $0.stat == .enhancedDamage }.reduce(0) { $0 + $1.value }
+        let strBonus = 1 + Double(str + skillEDValue) / 100
         let minD = Double(wd.lowerBound) * strBonus
         let maxD = Double(wd.upperBound) * strBonus
 
-        let maxLife = c.baseLife + Double(level - 1) * c.lifePerLevel + Double(vit) * c.lifePerVitality + Double(v(.life))
-        let maxMana = c.baseMana + Double(level - 1) * c.manaPerLevel + Double(eng) * c.manaPerEnergy + Double(v(.mana))
-        let armor = equipment.values.reduce(0) { $0 + $1.defense }
+        let maxLife = (c.baseLife + Double(level - 1) * c.lifePerLevel + Double(vit) * c.lifePerVitality + Double(v(.life)))
+            * (1 + Double(v(.lifePercent)) / 100)
+        let maxMana = (c.baseMana + Double(level - 1) * c.manaPerLevel + Double(eng) * c.manaPerEnergy + Double(v(.mana)))
+            * (1 + Double(v(.manaPercent)) / 100)
+        // Skill/buff enhanced defense applies to total armor (gear ED is already inside item.defense).
+        let skillED = extra.filter { $0.stat == .enhancedDefense }.reduce(0) { $0 + $1.value }
+        let gearArmor = equipment.values.reduce(0) { $0 + $1.defense }
+        let armor = gearArmor * (100 + skillED) / 100 + extra.filter { $0.stat == .defense }.reduce(0) { $0 + $1.value }
 
         var s = CombatStats(level: level, life: maxLife, minDamage: minD, maxDamage: maxD,
                             attackRating: Double(dex * 5 + level * 5 + v(.attackRating)),
@@ -70,7 +79,8 @@ public enum StatCalculator {
         s.damageReduction = Double(v(.damageReduction))
         s.lifeSteal = Double(v(.lifeSteal))
         s.thorns = Double(v(.thorns))
-        s.blockChance = Double(equipment[.offhand]?.base.block ?? 0) + (equipment[.offhand] != nil ? Double(dex) / 10 : 0)
+        let shield = equipment[.offhand]?.base.category == .shield
+        s.blockChance = shield ? Double(equipment[.offhand]!.base.block) + Double(dex) / 10 + Double(v(.blockChance)) : 0
         let all = v(.allResist)
         s.resist = Resistances(fire: v(.fireResist) + all, cold: v(.coldResist) + all,
                                lightning: v(.lightningResist) + all, poison: v(.poisonResist) + all)
