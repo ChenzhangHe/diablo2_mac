@@ -12,7 +12,10 @@ final class HUD: SKNode {
     private let targetBarBG = SKSpriteNode(color: NSColor(white: 0, alpha: 0.7), size: CGSize(width: 220, height: 22))
     private let targetBar = SKSpriteNode(color: NSColor(calibratedRed: 0.6, green: 0.05, blue: 0.05, alpha: 0.9),
                                          size: CGSize(width: 216, height: 18))
-    private let banner = SKLabelNode(fontNamed: "Georgia-Bold")
+    private let banner = SKLabelNode(fontNamed: "PingFangSC-Semibold")
+    private let xpBG = SKSpriteNode(color: NSColor(white: 0, alpha: 0.7), size: CGSize(width: 400, height: 6))
+    private let xpFill = SKSpriteNode(color: NSColor(calibratedRed: 0.85, green: 0.7, blue: 0.25, alpha: 1), size: CGSize(width: 400, height: 6))
+    private let pointsBadge = SKLabelNode(fontNamed: "PingFangSC-Semibold")
 
     override init() {
         super.init()
@@ -35,6 +38,14 @@ final class HUD: SKNode {
         targetBarBG.isHidden = true
         addChild(targetBarBG)
 
+        xpFill.anchorPoint = CGPoint(x: 0, y: 0.5)
+        xpFill.position = CGPoint(x: -200, y: 0)
+        xpBG.addChild(xpFill)
+        addChild(xpBG)
+        pointsBadge.fontSize = 12
+        pointsBadge.fontColor = NSColor(calibratedRed: 0.95, green: 0.82, blue: 0.35, alpha: 1)
+        addChild(pointsBadge)
+
         banner.fontSize = 54
         banner.fontColor = NSColor(calibratedRed: 0.75, green: 0.1, blue: 0.05, alpha: 1)
         banner.verticalAlignmentMode = .center
@@ -49,7 +60,9 @@ final class HUD: SKNode {
         lifeOrb.position = CGPoint(x: -w + 80, y: -h + 80)
         manaOrb.position = CGPoint(x: w - 80, y: -h + 80)
         belt.position = CGPoint(x: 0, y: -h + 30)
-        xpLabel.position = CGPoint(x: 0, y: -h + 12)
+        xpLabel.position = CGPoint(x: 0, y: -h + 14)
+        xpBG.position = CGPoint(x: 0, y: -h + 4)
+        pointsBadge.position = CGPoint(x: -w + 170, y: -h + 20)
         targetBarBG.position = CGPoint(x: 0, y: h - 40)
     }
 
@@ -57,7 +70,12 @@ final class HUD: SKNode {
         lifeOrb.set(fraction: p.stats.lifeFraction, text: "\(Int(p.stats.life.rounded(.up)))/\(Int(p.stats.maxLife))")
         manaOrb.set(fraction: p.stats.manaFraction, text: "\(Int(p.stats.mana))/\(Int(p.stats.maxMana))")
         belt.text = "[1] 治疗药剂 ×\(p.healthPotions)    [2] 法力药剂 ×\(p.manaPotions)"
-        xpLabel.text = "等级 \(p.stats.level)   经验 \(p.xp)"
+        xpLabel.text = "等级 \(p.stats.level)   经验 \(p.xp) / \(p.xpForNextLevel)"
+        xpFill.xScale = CGFloat(max(0, min(1, p.xpIntoLevel)))
+        var badges: [String] = []
+        if p.statPoints > 0 { badges.append("属性点 \(p.statPoints) [C]") }
+        if p.skillPoints > 0 { badges.append("技能点 \(p.skillPoints) [T]") }
+        pointsBadge.text = badges.joined(separator: "  ")
         if let t = target, t.isAlive {
             targetBarBG.isHidden = false
             targetName.text = t.kind.name

@@ -127,6 +127,8 @@ final class InventoryPanel: SKNode {
 final class CharacterPanel: SKNode {
     static let size = CGSize(width: 300, height: 500)
     private let lines = SKNode()
+    private var buttons: [(Player.AttributeKind, CGRect)] = []
+    private var signature = ""
 
     override init() {
         super.init()
@@ -141,14 +143,29 @@ final class CharacterPanel: SKNode {
 
     required init?(coder: NSCoder) { fatalError() }
 
+    /// Which "+" button (if any) is at a point in camera space.
+    func attributeButton(at p: CGPoint) -> Player.AttributeKind? {
+        let local = CGPoint(x: p.x - position.x, y: p.y - position.y)
+        return buttons.first { $0.1.contains(local) }?.0
+    }
+
+    func contains(camPoint p: CGPoint) -> Bool {
+        abs(p.x - position.x) <= Self.size.width / 2 && abs(p.y - position.y) <= Self.size.height / 2
+    }
+
     func refresh(_ p: Player) {
-        lines.removeAllChildren()
         let s = p.stats
+        let sig = "\(p.attributes)|\(p.statPoints)|\(Int(s.life))|\(Int(s.mana))|\(p.xp)|\(p.equipment.values.map(\.id).sorted())"
+        guard sig != signature else { return }
+        signature = sig
+        lines.removeAllChildren()
+        buttons.removeAll()
         let g = StatCalculator.gearModifiers(p.equipment)
         func attr(_ base: Int, _ st: Stat) -> String { let b = g[st] ?? 0; return b > 0 ? "\(base + b)  (+\(b))" : "\(base)" }
         let elem = s.elemental.map { "\($0.type.displayName) \(Int($0.min))-\(Int($0.max))" }.joined(separator: " ")
         let rows: [(String, String)] = [
-            ("职业", p.heroClass.name), ("等级", "\(s.level)"), ("经验", "\(p.xp)"), ("", ""),
+            ("职业", p.heroClass.name), ("等级", "\(s.level)"), ("经验", "\(p.xp) / \(p.xpForNextLevel)"),
+            ("属性点", p.statPoints > 0 ? "\(p.statPoints)" : "-"), ("", ""),
             ("力量", attr(p.attributes.strength, .strength)), ("敏捷", attr(p.attributes.dexterity, .dexterity)),
             ("体魄", attr(p.attributes.vitality, .vitality)), ("灵力", attr(p.attributes.energy, .energy)), ("", ""),
             ("伤害", "\(Int(s.minDamage))-\(Int(s.maxDamage))" + (elem.isEmpty ? "" : " +" + elem)),
@@ -167,9 +184,23 @@ final class CharacterPanel: SKNode {
         title.position = CGPoint(x: 0, y: Self.size.height / 2 - 24)
         lines.addChild(title)
         var y = Self.size.height / 2 - 48
+        let attrRows: [String: Player.AttributeKind] = ["力量": .strength, "敏捷": .dexterity, "体魄": .vitality, "灵力": .energy]
         for (k, v) in rows {
             defer { y -= k.isEmpty ? 8 : 17 }
             guard !k.isEmpty else { continue }
+            if p.statPoints > 0, let kind = attrRows[k] {
+                let b = SKShapeNode(rectOf: CGSize(width: 16, height: 14), cornerRadius: 2)
+                b.fillColor = NSColor(calibratedRed: 0.4, green: 0.3, blue: 0.1, alpha: 1)
+                b.strokeColor = ItemVisuals.gold
+                let bx = -Self.size.width / 2 + 80
+                b.position = CGPoint(x: bx, y: y + 4)
+                let plus = SKLabelNode(fontNamed: "Menlo-Bold")
+                plus.text = "+"; plus.fontSize = 13; plus.fontColor = ItemVisuals.gold
+                plus.verticalAlignmentMode = .center
+                b.addChild(plus)
+                lines.addChild(b)
+                buttons.append((kind, CGRect(x: bx - 10, y: y - 5, width: 20, height: 18)))
+            }
             let kl = SKLabelNode(fontNamed: "PingFangSC-Regular")
             kl.text = k; kl.fontSize = 12; kl.fontColor = ItemVisuals.text
             kl.horizontalAlignmentMode = .left; kl.position = CGPoint(x: -Self.size.width / 2 + 20, y: y)

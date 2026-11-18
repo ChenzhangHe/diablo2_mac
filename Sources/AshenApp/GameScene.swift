@@ -138,6 +138,7 @@ final class GameScene: SKScene {
         var drops: [LootTable.Drop] = [.gold(37)]
         for i in 0..<4 { drops.append(.item(gen.generate(id: 60_000 + i, itemLevel: 8, rng: &rng))) }
         game.dropLoot(drops, at: game.player.position + Vec2(1.5, 1.5))
+        game.player.gainXP(500)
         inventoryPanel.isHidden = false
         characterPanel.isHidden = false
         DispatchQueue.main.async { [self] in
@@ -438,10 +439,7 @@ final class GameScene: SKScene {
     private func mouseOverUI() -> Bool {
         guard let cp = mouseCamPoint() else { return false }
         if !inventoryPanel.isHidden && inventoryPanel.hit(cp) != .outside { return true }
-        if !characterPanel.isHidden {
-            let l = CGPoint(x: cp.x - characterPanel.position.x, y: cp.y - characterPanel.position.y)
-            if abs(l.x) <= CharacterPanel.size.width / 2 && abs(l.y) <= CharacterPanel.size.height / 2 { return true }
-        }
+        if !characterPanel.isHidden && characterPanel.contains(camPoint: cp) { return true }
         return false
     }
 
@@ -484,6 +482,10 @@ final class GameScene: SKScene {
             case .outside:
                 break
             }
+        }
+        if let cp = mouseCamPoint(), !characterPanel.isHidden, characterPanel.contains(camPoint: cp) {
+            if let a = characterPanel.attributeButton(at: cp) { game.spendStatPoint(a) }
+            return
         }
         if mouseOverUI() { return }
         if game.player.cursor != nil {
