@@ -19,6 +19,9 @@ public struct Monster: Sendable, Identifiable {
     public var packID: Int
     public var home: Vec2
     public var deathTime: Double?
+    public var stunnedUntil = 0.0
+    public var vulnerableUntil = 0.0
+    public var vulnerability = 0.0
 
     public var position: Vec2 { mover.position }
     public var isAlive: Bool { stats.isAlive }
@@ -62,6 +65,9 @@ public struct Player: Sendable {
     public var absorbPool = 0.0
     public var frenzyStacks = 0
     public var frenzyExpires = 0.0
+    /// Skill used for melee attacks on the current target (nil = basic attack).
+    public var attackSkill: String?
+    public var action: PlayerAction = .none
     public var equipment: [EquipSlot: Item] = [:]
     public var inventory = Inventory()
     /// Item held on the mouse cursor (classic inventory juggling).
@@ -177,6 +183,12 @@ public struct Player: Sendable {
     }
 }
 
+public enum PlayerAction: Sendable, Equatable {
+    case none
+    case charging(target: EntityID, until: Double)
+    case whirling(dest: Vec2, nextTick: Double, until: Double)
+}
+
 public struct Buff: Sendable, Equatable {
     public let skillID: String
     public var expires: Double
@@ -210,4 +222,10 @@ public enum GameEvent: Sendable, Equatable {
     case pickedUp(String)
     case inventoryFull
     case cannotEquip(String)
+    case absorbed(at: Vec2)
+    case skillUsed(String, at: Vec2, toward: Vec2)
+    case nova(String, at: Vec2, radius: Double)
+    case stunned(EntityID)
+    case notEnoughMana
+    case skillUnavailable(String)
 }

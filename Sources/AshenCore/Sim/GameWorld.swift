@@ -4,12 +4,12 @@ import Foundation
 public final class GameWorld {
     public private(set) var level: GeneratedLevel
     public var player: Player
-    public private(set) var monsters: [Monster] = []
+    public internal(set) var monsters: [Monster] = []
     public private(set) var projectiles: [Projectile] = []
     public private(set) var groundItems: [GroundItem] = []
     public private(set) var time = 0.0
     private var pendingEvents: [GameEvent] = []
-    private var rng: SeededRNG
+    var rng: SeededRNG
     private var nextID: EntityID = 1
 
     public static let respawnDelay = 2.5
@@ -47,9 +47,9 @@ public final class GameWorld {
         return pendingEvents
     }
 
-    private func emit(_ e: GameEvent) { pendingEvents.append(e) }
+    func emit(_ e: GameEvent) { pendingEvents.append(e) }
 
-    private func makeID() -> EntityID { defer { nextID += 1 }; return nextID }
+    func makeID() -> EntityID { defer { nextID += 1 }; return nextID }
 
     // MARK: - Spawning
 
@@ -97,20 +97,21 @@ public final class GameWorld {
     public var playerAlive: Bool { player.stats.isAlive }
 
     public func commandMove(to p: Vec2) {
-        guard playerAlive else { return }
+        guard playerAlive, player.action == .none else { return }
         player.target = nil
         player.mover.moveTo(p, on: level.map)
     }
 
     public func commandWalk(direction: Vec2, dt: Double) {
-        guard playerAlive else { return }
+        guard playerAlive, player.action == .none else { return }
         player.target = nil
         player.mover.stop()
         player.mover.slide(direction.normalized * (player.mover.speed * dt), map: level.map)
     }
 
-    public func commandAttack(_ id: EntityID) {
-        guard playerAlive, monster(id)?.isAlive == true else { return }
+    public func commandAttack(_ id: EntityID, skill: String? = nil) {
+        guard playerAlive, player.action == .none, monster(id)?.isAlive == true else { return }
+        player.attackSkill = skill
         player.target = .monster(id)
         player.repathTimer = 0
     }
@@ -162,6 +163,8 @@ public final class GameWorld {
         player.stats.mana = min(player.stats.maxMana, player.stats.mana + mana + player.stats.manaRegen * dt)
 
         player.attackCooldown -= dt
+        updateBuffs(dt)
+        if updateAction(dt) { return }
         autoPickupGold()
         if case .groundItem(let gid)? = player.target {
             if let g = groundItems.first(where: { $0.id == gid }) {
@@ -197,22 +200,22 @@ public final class GameWorld {
                 if player.attackCooldown <= 0 {
                     player.attackCooldown = 1 / player.stats.attacksPerSecond
                     emit(.swing(attacker: nil, at: player.position, toward: m.position))
-                    let outcome = Combat.resolveAttack(attacker: player.stats, defender: m.stats, rng: &rng)
-                    apply(outcome, toMonsterAt: idx)
+                    performMeleeAttack(on: idx)
                 }
             }
         }
         player.mover.update(dt: dt, map: level.map)
     }
 
-    private func apply(_ outcome: AttackOutcome, toMonsterAt idx: Int) {
+    func apply(_ outcome: AttackOutcome, toMonsterAt idx: Int) {
         let pos = monsters[idx].position
         switch outcome {
         case .miss:
             emit(.miss(at: pos))
         case .blocked:
             emit(.blocked(at: pos))
-        case .hit(let dmg, let crit):
+        case .hit(let raw, let crit):
+            let dmg = raw * (time < monsters[idx].vulnerableUntil ? 1 + monsters[idx].vulnerability / 100 : 1)
             if player.stats.lifeSteal > 0 {
                 player.stats.life = min(player.stats.maxLife, player.stats.life + dmg * player.stats.lifeSteal / 100)
             }
@@ -255,7 +258,15 @@ public final class GameWorld {
             emit(.miss(at: player.position))
         case .blocked:
             emit(.blocked(at: player.position))
-        case .hit(let dmg, let crit):
+        case .hit(let raw, let crit):
+            var dmg = raw
+            if player.absorbPool > 0 {
+                let a = min(player.absorbPool, dmg)
+                player.absorbPool -= a
+                dmg -= a
+                if player.absorbPool <= 0 { player.buffs.removeAll { $0.skillID == "sunshield" } }
+                if dmg <= 0 { emit(.absorbed(at: player.position)); return }
+            }
             player.stats.life -= dmg
             emit(.damage(at: player.position, amount: Int(dmg.rounded()), crit: crit, toPlayer: true))
             if player.stats.life <= 0 {
@@ -271,6 +282,11 @@ public final class GameWorld {
 
     private func respawnPlayer() {
         player.deathTime = nil
+        player.action = .none
+        player.buffs.removeAll()
+        player.absorbPool = 0
+        player.frenzyStacks = 0
+        player.recalculate()
         player.stats.life = player.stats.maxLife
         player.stats.mana = player.stats.maxMana
         var mover = Mover(position: Vec2(center: level.spawn), speed: player.mover.speed)
@@ -285,12 +301,16 @@ public final class GameWorld {
 
     // MARK: - Monster AI
 
-    private func canSee(_ from: Vec2, _ to: Vec2) -> Bool {
+    func canSee(_ from: Vec2, _ to: Vec2) -> Bool {
         Pathfinder.clearLine(on: level.map, from: from, to: to, radius: 0.05)
     }
 
     private func updateMonster(_ i: Int, _ dt: Double) {
         monsters[i].cooldown -= dt
+        if time < monsters[i].stunnedUntil {
+            monsters[i].mover.stop()
+            return
+        }
         let kind = monsters[i].kind
         let pos = monsters[i].position
         let ppos = player.position

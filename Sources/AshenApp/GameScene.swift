@@ -364,7 +364,7 @@ final class GameScene: SKScene {
                 message("物品栏已满", color: ItemVisuals.bad)
             case .cannotEquip(let name):
                 message("无法装备 \(name)：属性不足", color: ItemVisuals.bad)
-            case .potion, .itemDropped:
+            case .potion, .itemDropped, .absorbed, .skillUsed, .nova, .stunned, .notEnoughMana, .skillUnavailable:
                 break
             }
         }
