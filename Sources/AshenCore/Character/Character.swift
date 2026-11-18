@@ -22,7 +22,7 @@ public struct HeroClass: Sendable {
 
     public static let emberguard = HeroClass(
         id: "emberguard", name: "烬卫", start: Attributes(strength: 30, dexterity: 20, vitality: 25, energy: 10),
-        baseLife: 5, lifePerLevel: 2, lifePerVitality: 2, baseMana: 5, manaPerLevel: 1, manaPerEnergy: 1)
+        baseLife: -20, lifePerLevel: 3, lifePerVitality: 3, baseMana: 5, manaPerLevel: 1, manaPerEnergy: 1)
 }
 
 public enum StatCalculator {

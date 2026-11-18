@@ -32,7 +32,7 @@ final class CombatTests: XCTestCase {
         w.commandAttack(id)
         for _ in 0..<(60 * 30) where w.monster(id)?.isAlive == true { w.update(dt: 1.0 / 60) }
         XCTAssertEqual(w.monster(id)?.isAlive, false)
-        XCTAssertEqual(w.player.xp, Bestiary.murkling.xp)  // same level → unscaled
+        XCTAssertEqual(w.player.xp, Experience.scaled(Bestiary.murkling.xp, monsterLevel: 1, playerLevel: 1))
         XCTAssertTrue(w.drainEvents().contains { if case .monsterDied = $0 { true } else { false } })
     }
 

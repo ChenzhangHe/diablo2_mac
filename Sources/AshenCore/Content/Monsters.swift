@@ -97,7 +97,7 @@ public enum Bestiary {
 
     /// Act I boss. Base life is ×4 when promoted to unique.
     public static let abbess = MonsterKind(
-        id: "abbess", name: "溺亡院长", level: 9, life: 150...165, damage: 8...16, damageType: .physical,
+        id: "abbess", name: "溺亡院长", level: 9, life: 260...280, damage: 12...24, damageType: .physical,
         attackRating: 130, defense: 45, resist: Resistances(fire: 20, cold: 75, lightning: 20, poison: 50),
         speed: 2.6, attacksPerSecond: 0.9, reach: 1.4, aggroRadius: 14, behavior: .boss,
         packSize: 1...1, xp: 600, radius: 0.5, color: (0.55, 0.7, 0.72), isUndead: true)
@@ -113,7 +113,7 @@ extension MonsterKind {
         func r(_ x: ClosedRange<Int>, _ k: Double) -> ClosedRange<Int> {
             Int((Double(x.lowerBound) * (1 + k * d)).rounded())...Int((Double(x.upperBound) * (1 + k * d)).rounded())
         }
-        var m = MonsterKind(id: id, name: name, level: max(level, self.level), life: r(life, 0.3), damage: r(damage, 0.18),
+        var m = MonsterKind(id: id, name: name, level: max(level, self.level), life: r(life, 0.22), damage: r(damage, 0.12),
                             damageType: damageType, attackRating: attackRating * (1 + 0.15 * d), defense: defense * (1 + 0.15 * d),
                             resist: resist, speed: speed, attacksPerSecond: attacksPerSecond, reach: reach,
                             aggroRadius: aggroRadius, behavior: behavior, packSize: packSize,

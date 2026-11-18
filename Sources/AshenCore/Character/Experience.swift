@@ -5,12 +5,14 @@ public enum Experience {
     public static let maxLevel = 40
     public static let statPointsPerLevel = 5
     public static let skillPointsPerLevel = 1
+    /// Global tuning knob for monster XP.
+    public static let monsterXPMultiplier = 2.5
 
     /// Total XP required to reach `level` (level 1 = 0).
     public static func total(forLevel level: Int) -> Int {
         guard level > 1 else { return 0 }
         var sum = 0.0
-        for l in 1..<level { sum += 100 * pow(Double(l), 1.65) }
+        for l in 1..<level { sum += 60 * pow(Double(l), 1.5) }
         return Int(sum)
     }
 
@@ -24,6 +26,6 @@ public enum Experience {
         case -5...5: factor = 1
         default: factor = 1 + min(Double(diff - 5), 5) * 0.05
         }
-        return max(1, Int((Double(xp) * factor).rounded()))
+        return max(1, Int((Double(xp) * factor * monsterXPMultiplier).rounded()))
     }
 }
