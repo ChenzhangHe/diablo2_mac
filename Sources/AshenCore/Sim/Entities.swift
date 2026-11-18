@@ -22,6 +22,44 @@ public struct Monster: Sendable, Identifiable {
     public var stunnedUntil = 0.0
     public var vulnerableUntil = 0.0
     public var vulnerability = 0.0
+    public var rank: MonsterRank = .normal
+    public var affixes: [EliteAffix] = []
+    public var uniqueName: String?
+
+    public var displayName: String {
+        switch rank {
+        case .unique: uniqueName ?? kind.name
+        case .champion: "冠军 " + kind.name
+        default: kind.name
+        }
+    }
+
+    public var xpValue: Int {
+        switch rank {
+        case .normal: kind.xp
+        case .minion: kind.xp * 2
+        case .champion: kind.xp * 3
+        case .unique: kind.xp * 5
+        }
+    }
+
+    /// Turn this monster into an elite of the given rank.
+    mutating func promote(to r: MonsterRank, affixes a: [EliteAffix], name: String? = nil) {
+        rank = r
+        affixes = a
+        uniqueName = name
+        let (lifeX, dmgX, lvl): (Double, Double, Int) = switch r {
+        case .champion: (3, 1.5, 2)
+        case .unique: (4, 1.6, 3)
+        case .minion: (1.5, 1.2, 1)
+        case .normal: (1, 1, 0)
+        }
+        stats.level += lvl
+        stats.maxLife *= lifeX; stats.life = stats.maxLife
+        stats.minDamage *= dmgX; stats.maxDamage *= dmgX
+        stats.attackRating *= 1.3
+        for af in a { af.apply(to: &self) }
+    }
 
     public var position: Vec2 { mover.position }
     public var isAlive: Bool { stats.isAlive }
@@ -86,6 +124,7 @@ public struct Player: Sendable {
     public var manaPool = 0.0
     public var deathTime: Double?
     public var xp = 0
+    public var chilledUntil = 0.0
 
     public var position: Vec2 { mover.position }
     public var level: Int { stats.level }

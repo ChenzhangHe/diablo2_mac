@@ -8,7 +8,7 @@ final class HUD: SKNode {
     private let manaOrb = Orb(color: NSColor(calibratedRed: 0.1, green: 0.2, blue: 0.8, alpha: 1))
     private let belt = SKLabelNode(fontNamed: "Menlo-Bold")
     private let xpLabel = SKLabelNode(fontNamed: "Menlo")
-    private let targetName = SKLabelNode(fontNamed: "Menlo-Bold")
+    private let targetName = SKLabelNode(fontNamed: "PingFangSC-Semibold")
     private let targetBarBG = SKSpriteNode(color: NSColor(white: 0, alpha: 0.7), size: CGSize(width: 220, height: 22))
     private let targetBar = SKSpriteNode(color: NSColor(calibratedRed: 0.6, green: 0.05, blue: 0.05, alpha: 0.9),
                                          size: CGSize(width: 216, height: 18))
@@ -78,7 +78,14 @@ final class HUD: SKNode {
         pointsBadge.text = badges.joined(separator: "  ")
         if let t = target, t.isAlive {
             targetBarBG.isHidden = false
-            targetName.text = t.kind.name
+            let affixText = t.affixes.map(\.displayName).joined(separator: " ")
+            targetName.text = affixText.isEmpty ? t.displayName : "\(t.displayName)  ·  \(affixText)"
+            targetName.fontColor = switch t.rank {
+            case .unique: NSColor(calibratedRed: 0.95, green: 0.8, blue: 0.35, alpha: 1)
+            case .champion: NSColor(calibratedRed: 0.5, green: 0.6, blue: 1, alpha: 1)
+            default: .white
+            }
+            targetBarBG.size.width = max(220, targetName.frame.width + 24)
             targetBar.xScale = CGFloat(t.stats.lifeFraction)
         } else {
             targetBarBG.isHidden = true

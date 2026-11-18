@@ -116,14 +116,15 @@ enum RareNames {
 public enum LootTable {
     public enum Drop: Sendable { case gold(Int), item(Item) }
 
-    public static func roll(monsterLevel: Int, isBoss: Bool = false, goldFind: Double = 0, magicFind: Double = 0,
+    public static func roll(monsterLevel: Int, isBoss: Bool = false, picks: Int = 1, guaranteedItem: Bool = false,
+                            goldFind: Double = 0, magicFind: Double = 0,
                             nextID: () -> Int, rng: inout SeededRNG) -> [Drop] {
         var drops: [Drop] = []
-        let picks = isBoss ? 5 : 1
+        let picks = isBoss ? 5 : picks
         let gen = ItemGenerator()
-        for _ in 0..<picks {
+        for n in 0..<picks {
             let r = rng.unit()
-            if isBoss || r < 0.13 {
+            if isBoss || (guaranteedItem && n == 0) || r < 0.13 {
                 drops.append(.item(gen.generate(id: nextID(), itemLevel: monsterLevel, rng: &rng, magicFind: magicFind)))
             } else if r < 0.36 {
                 let base = rng.int(2...(6 + monsterLevel * 3))

@@ -87,6 +87,7 @@ final class MonsterNode: SKNode {
     private let outline: SKShapeNode
     private(set) var dead = false
     let bodyHeight: CGFloat
+    private var normalStroke = NSColor(white: 0, alpha: 0.7)
 
     init(monster m: Monster) {
         id = m.id
@@ -139,6 +140,33 @@ final class MonsterNode: SKNode {
             bow.position = CGPoint(x: 10, y: 18)
             body.addChild(bow)
         }
+        switch m.rank {
+        case .unique:
+            body.setScale(1.35)
+            shape.glowWidth = 3
+            shape.strokeColor = NSColor(calibratedRed: 0.95, green: 0.8, blue: 0.35, alpha: 1)
+            normalStroke = shape.strokeColor
+        case .champion:
+            body.setScale(1.2)
+            shape.glowWidth = 2
+            shape.strokeColor = NSColor(calibratedRed: 0.45, green: 0.55, blue: 1, alpha: 1)
+            normalStroke = shape.strokeColor
+        case .minion:
+            body.setScale(1.08)
+        case .normal:
+            break
+        }
+        if let affix = m.affixes.first(where: { [.fireTouched, .frostTouched, .stormTouched].contains($0) }) {
+            let c: NSColor = switch affix {
+            case .fireTouched: NSColor(calibratedRed: 1, green: 0.4, blue: 0.1, alpha: 0.8)
+            case .frostTouched: NSColor(calibratedRed: 0.4, green: 0.7, blue: 1, alpha: 0.8)
+            default: NSColor(calibratedRed: 0.9, green: 0.9, blue: 0.4, alpha: 0.8)
+            }
+            let glow = SKShapeNode(ellipseOf: CGSize(width: 34, height: 16))
+            glow.strokeColor = c; glow.glowWidth = 4; glow.fillColor = c.withAlphaComponent(0.15)
+            glow.zPosition = -0.1
+            addChild(glow)
+        }
         if k.behavior == .hitAndRun {
             body.run(.repeatForever(.sequence([.moveBy(x: 0, y: 4, duration: 0.2), .moveBy(x: 0, y: -4, duration: 0.2)])))
         }
@@ -154,7 +182,7 @@ final class MonsterNode: SKNode {
 
     func setHighlighted(_ on: Bool) {
         outline.lineWidth = on ? 2.5 : 1
-        outline.strokeColor = on ? NSColor(calibratedRed: 1, green: 0.85, blue: 0.5, alpha: 1) : NSColor(white: 0, alpha: 0.7)
+        outline.strokeColor = on ? NSColor(calibratedRed: 1, green: 0.85, blue: 0.5, alpha: 1) : normalStroke
     }
 
     func flashHit() {

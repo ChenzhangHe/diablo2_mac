@@ -369,7 +369,7 @@ final class GameScene: SKScene {
     private func novaEffect(_ id: String, at p: Vec2, radius: Double) {
         let color: NSColor
         switch id {
-        case "cinder_nova": color = NSColor(calibratedRed: 1, green: 0.45, blue: 0.1, alpha: 1)
+        case "cinder_nova", "monster_fire": color = NSColor(calibratedRed: 1, green: 0.45, blue: 0.1, alpha: 1)
         case "quake_cry": color = NSColor(calibratedRed: 0.75, green: 0.6, blue: 0.4, alpha: 1)
         case "dread_howl": color = NSColor(calibratedRed: 0.6, green: 0.3, blue: 0.8, alpha: 1)
         default: color = NSColor(calibratedRed: 0.5, green: 0.15, blue: 0.15, alpha: 1)

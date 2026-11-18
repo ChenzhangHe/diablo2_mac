@@ -59,7 +59,9 @@ public final class GameWorld {
             let packs = room.w * room.h > 60 ? 2 : 1
             for _ in 0..<packs {
                 let kind = kinds[rng.int(0...(kinds.count - 1))]
-                spawnPack(kind: kind, in: room, packID: packID)
+                let ids = spawnPack(kind: kind, in: room, packID: packID)
+                let roll = rng.unit()
+                if roll < 0.08 { makeUniquePack(ids) } else if roll < 0.18 { makeChampionPack(ids) }
                 packID += 1
             }
         }
@@ -81,6 +83,34 @@ public final class GameWorld {
             }
         }
         return ids
+    }
+
+    private func randomAffixes(_ count: Int) -> [EliteAffix] {
+        var pool = EliteAffix.allCases
+        var out: [EliteAffix] = []
+        for _ in 0..<count where !pool.isEmpty { out.append(pool.remove(at: rng.int(0...(pool.count - 1)))) }
+        return out
+    }
+
+    /// First monster becomes a named unique with 1–3 affixes; the rest become its minions.
+    public func makeUniquePack(_ ids: [EntityID]) {
+        guard let first = ids.first else { return }
+        let affixes = randomAffixes(rng.int(1...3))
+        let name = UniqueNames.make(rng: &rng)
+        for id in ids {
+            guard let i = monsters.firstIndex(where: { $0.id == id }) else { continue }
+            if id == first { monsters[i].promote(to: .unique, affixes: affixes, name: name) }
+            else { monsters[i].promote(to: .minion, affixes: affixes.filter { $0 != .hulking }) }
+        }
+    }
+
+    /// Champions come in packs of up to 4 sharing one affix.
+    public func makeChampionPack(_ ids: [EntityID]) {
+        let affix = randomAffixes(1)
+        for (n, id) in ids.enumerated() {
+            guard let i = monsters.firstIndex(where: { $0.id == id }) else { continue }
+            if n < 4 { monsters[i].promote(to: .champion, affixes: affix) } else { monsters.remove(at: i) }
+        }
     }
 
     @discardableResult
@@ -204,7 +234,10 @@ public final class GameWorld {
                 }
             }
         }
+        let base = player.mover.speed
+        if time < player.chilledUntil { player.mover.speed = base * 0.6 }
         player.mover.update(dt: dt, map: level.map)
+        player.mover.speed = base
     }
 
     func apply(_ outcome: AttackOutcome, toMonsterAt idx: Int) {
@@ -231,11 +264,21 @@ public final class GameWorld {
         monsters[idx].deathTime = time
         monsters[idx].mover.stop()
         let m = monsters[idx]
-        let xp = Experience.scaled(m.kind.xp, monsterLevel: m.stats.level, playerLevel: player.level)
+        let xp = Experience.scaled(m.xpValue, monsterLevel: m.stats.level, playerLevel: player.level)
         emit(.monsterDied(m.id, at: m.position, xp: xp))
         if player.gainXP(xp) > 0 { emit(.levelUp(player.level)) }
-        dropLoot(LootTable.roll(monsterLevel: m.kind.level, goldFind: player.goldFind,
+        let picks = m.rank == .unique ? 3 : (m.rank == .champion ? 2 : 1)
+        dropLoot(LootTable.roll(monsterLevel: m.stats.level, picks: picks, guaranteedItem: m.rank == .unique,
+                                goldFind: player.goldFind, magicFind: m.rank == .normal ? 0 : 50,
                                 nextID: { self.makeID() }, rng: &rng), at: m.position)
+        if m.affixes.contains(.fireTouched) {
+            // Death explosion.
+            emit(.nova("monster_fire", at: m.position, radius: 2))
+            if playerAlive && player.position.distance(to: m.position) <= 2 {
+                let raw = Double(rng.int(3...(8 + m.stats.level * 3)))
+                damagePlayer(.hit(damage: Combat.mitigate(raw, type: .fire, defender: player.stats), crit: false))
+            }
+        }
         // Skittish packmates nearby may panic.
         for j in monsters.indices where monsters[j].isAlive && monsters[j].packID == m.packID
             && monsters[j].kind.behavior == .skittish && monsters[j].position.distance(to: m.position) < 6 {
@@ -381,6 +424,13 @@ public final class GameWorld {
         } else {
             let outcome = Combat.resolveAttack(attacker: m.stats, defender: player.stats, rng: &rng)
             damagePlayer(outcome)
+            if case .hit(let dmg, _) = outcome {
+                if m.affixes.contains(.frostTouched) { player.chilledUntil = time + 2.5 }
+                if m.affixes.contains(.manaBurn) { player.stats.mana = max(0, player.stats.mana - dmg) }
+                if m.stats.lifeSteal > 0 {
+                    monsters[i].stats.life = min(monsters[i].stats.maxLife, monsters[i].stats.life + dmg * m.stats.lifeSteal / 100)
+                }
+            }
             if case .hit = outcome, player.stats.thorns > 0 {
                 apply(.hit(damage: player.stats.thorns, crit: false), toMonsterAt: i)
                 if !monsters[i].isAlive { return }
