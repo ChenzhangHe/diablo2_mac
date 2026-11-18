@@ -645,6 +645,12 @@ final class GameScene: SKScene {
                 if let m = game.monster(id) {
                     floatText("复活", at: m.position, color: NSColor(calibratedRed: 0.8, green: 0.4, blue: 1, alpha: 1), size: 12)
                 }
+            case .notEnoughGold:
+                message("金币不足", color: ItemVisuals.bad)
+            case .bought(let name):
+                message("购买: \(name)")
+            case .sold(let name, let g):
+                message("出售: \(name)  +\(g) 金币", color: ItemVisuals.gold)
             case .areaEntered:
                 closeMenu()
                 buildArea()

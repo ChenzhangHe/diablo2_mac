@@ -107,6 +107,30 @@ public struct Item: Codable, Sendable, Identifiable, Equatable {
     }
 
     public var isPotion: Bool { base.category == .potion }
+
+    /// Buy price at a vendor.
+    public var price: Int {
+        switch baseID {
+        case ItemBases.healthPotion.id: return 30
+        case ItemBases.manaPotion.id: return 40
+        case ItemBases.portalScroll.id: return 60
+        default: break
+        }
+        let b = base
+        let baseValue = b.category.isJewelry ? 120 : 25 + b.qlvl * 18
+        let mult: Double = switch quality {
+        case .normal: 1
+        case .superior: 1.5
+        case .magic: 3
+        case .rare: 7
+        case .unique, .set: 12
+        }
+        let affixes = (prefixNames.count + suffixNames.count) * 40
+        return Int(Double(baseValue) * mult) + affixes + sockets * 30
+    }
+
+    /// What a vendor pays.
+    public var sellPrice: Int { max(1, price / 5) }
 }
 
 /// Gold or an item lying on the floor.

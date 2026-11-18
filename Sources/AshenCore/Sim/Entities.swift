@@ -142,6 +142,10 @@ public struct Player: Sendable {
     public var deathTime: Double?
     public var xp = 0
     public var chilledUntil = 0.0
+    public var portalScrolls = 3
+    /// Open town portal: field area and position.
+    public var openPortal: (area: String, position: Vec2)?
+    public var stash = Inventory(width: 10, height: 8)
     /// Discovered waypoints (area ids).
     public var waypoints: Set<String> = []
 
@@ -277,6 +281,9 @@ public enum GameEvent: Sendable, Equatable {
     case areaEntered(String)
     case openWaypoints
     case talk(String)
+    case notEnoughGold
+    case bought(String)
+    case sold(String, Int)
     case playerDied
     case playerRespawned
     case potion(health: Bool)

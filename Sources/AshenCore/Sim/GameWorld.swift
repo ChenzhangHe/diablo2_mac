@@ -6,6 +6,8 @@ public final class GameWorld {
     public private(set) var area: AreaDef
     public private(set) var interactables: [Interactable] = []
     public let seed: UInt64
+    /// Vendor stock by NPC id; restocked whenever the player enters town.
+    public private(set) var vendors: [String: Inventory] = [:]
     /// Saved state of areas the player has left, so revisiting keeps kills and loot.
     private var visited: [String: AreaState] = [:]
     public var player: Player
@@ -29,6 +31,7 @@ public final class GameWorld {
         giveStartingGear()
         enterFresh()
         player.waypoints.insert(Areas.actOne[0].id)
+        if area.isTown { restockVendors() }
     }
 
     static func areaSeed(_ seed: UInt64, _ id: String) -> UInt64 {
@@ -589,6 +592,13 @@ public final class GameWorld {
         if target.hasWaypoint { player.waypoints.insert(target.id) }
         if target.isTown {
             player.stats.life = player.stats.maxLife   // the camp's fire mends you
+            restockVendors()
+            if let portal = player.openPortal,
+               !interactables.contains(where: { if case .townPortal = $0.kind { true } else { false } }) {
+                interactables.append(Interactable(id: makeID(), kind: .townPortal(backArea: portal.area, backPosition: portal.position),
+                                                  position: Vec2(center: level.spawn) + Vec2(1.5, -1.5),
+                                                  name: "传送门 → " + (Areas.def(portal.area)?.name ?? "")))
+            }
         }
         emit(.areaEntered(target.id))
     }
@@ -618,10 +628,95 @@ public final class GameWorld {
         case .npc(let npc):
             emit(.talk(npc))
         case .townPortal(let backArea, let backPos):
-            if area.isTown { travel(to: backArea, arrival: .position(backPos)) }
-            else { travel(to: Areas.actOne[0].id, arrival: .entrance) }
-            interactables.removeAll { if case .townPortal = $0.kind { true } else { false } }
+            if area.isTown {
+                interactables.removeAll { if case .townPortal = $0.kind { true } else { false } }
+                travel(to: backArea, arrival: .position(backPos))
+                interactables.removeAll { if case .townPortal = $0.kind { true } else { false } }
+                player.openPortal = nil
+            } else {
+                travel(to: Areas.actOne[0].id, arrival: .entrance)
+            }
         }
+    }
+
+    /// Read a town portal scroll: opens a gate here back to camp.
+    @discardableResult
+    public func castTownPortal() -> Bool {
+        guard playerAlive, !area.isTown, player.portalScrolls > 0 else { return false }
+        player.portalScrolls -= 1
+        interactables.removeAll { if case .townPortal = $0.kind { true } else { false } }
+        player.openPortal = (area.id, player.position)
+        interactables.append(Interactable(id: makeID(), kind: .townPortal(backArea: area.id, backPosition: player.position),
+                                          position: player.position + Vec2(0.8, -0.8), name: "传送门 → 芦苇渡口"))
+        return true
+    }
+
+    // MARK: - Trade
+
+    public func restockVendors() {
+        let lvl = max(2, player.level + 1)
+        var smith = Inventory(width: 10, height: 8)
+        let gen = ItemGenerator()
+        for i in 0..<14 {
+            let q: ItemQuality = i < 5 ? .magic : (rng.chance(0.3) ? .superior : .normal)
+            let it = gen.generate(id: makeID(), itemLevel: lvl, rng: &rng, forcedQuality: q)
+            if !it.base.category.isJewelry || q == .magic { smith.add(it) }
+        }
+        vendors["smith"] = smith
+        var healer = Inventory(width: 10, height: 8)
+        for _ in 0..<10 { healer.add(Item(id: makeID(), base: ItemBases.healthPotion)) }
+        for _ in 0..<10 { healer.add(Item(id: makeID(), base: ItemBases.manaPotion)) }
+        for _ in 0..<5 { healer.add(Item(id: makeID(), base: ItemBases.portalScroll)) }
+        for _ in 0..<3 { healer.add(gen.generate(id: makeID(), itemLevel: lvl, rng: &rng, forcedQuality: .magic,
+                                                 base: rng.chance(0.5) ? ItemBases.base("ring") : ItemBases.base("amulet"))) }
+        vendors["healer"] = healer
+    }
+
+    /// Put a consumable into the belt counters, or the item into the bag.
+    @discardableResult
+    func stow(_ it: Item) -> Bool {
+        switch it.baseID {
+        case ItemBases.healthPotion.id where player.healthPotions < Player.beltCapacity: player.healthPotions += 1
+        case ItemBases.manaPotion.id where player.manaPotions < Player.beltCapacity: player.manaPotions += 1
+        case ItemBases.portalScroll.id: player.portalScrolls += 1
+        default: return player.inventory.add(it)
+        }
+        return true
+    }
+
+    public func buy(from npc: String, itemID: Int) {
+        guard var stock = vendors[npc], let it = stock.items.first(where: { $0.id == itemID }) else { return }
+        guard player.gold >= it.price else { emit(.notEnoughGold); return }
+        // Consumables are restocked infinitely: buy a copy.
+        let bought = it.isPotion ? Item(id: makeID(), base: it.base) : it
+        guard stow(bought) else { emit(.inventoryFull); return }
+        player.gold -= it.price
+        if !it.isPotion { stock.remove(id: itemID); vendors[npc] = stock }
+        emit(.bought(it.displayName))
+    }
+
+    public func sell(itemID: Int, to npc: String) {
+        guard let it = player.inventory.remove(id: itemID) else { return }
+        player.gold += it.sellPrice
+        if !it.isPotion, var stock = vendors[npc] { stock.add(it); vendors[npc] = stock }
+        emit(.sold(it.displayName, it.sellPrice))
+    }
+
+    // MARK: - Stash
+
+    /// Move an item between bag and stash.
+    public func moveToStash(itemID: Int) {
+        guard let e = player.inventory.entries.first(where: { $0.item.id == itemID }) else { return }
+        guard player.stash.firstFit(e.item.base.size) != nil else { emit(.inventoryFull); return }
+        player.inventory.remove(id: itemID)
+        player.stash.add(e.item)
+    }
+
+    public func moveFromStash(itemID: Int) {
+        guard let e = player.stash.entries.first(where: { $0.item.id == itemID }) else { return }
+        guard player.inventory.firstFit(e.item.base.size) != nil else { emit(.inventoryFull); return }
+        player.stash.remove(id: itemID)
+        player.inventory.add(e.item)
     }
 
     /// Waypoint travel to an already discovered area.
@@ -666,11 +761,7 @@ public final class GameWorld {
             groundItems.remove(at: i)
             emit(.pickedUp("\(n) 金币"))
         case .item(let it):
-            if it.baseID == ItemBases.healthPotion.id && player.healthPotions < Player.beltCapacity {
-                player.healthPotions += 1
-            } else if it.baseID == ItemBases.manaPotion.id && player.manaPotions < Player.beltCapacity {
-                player.manaPotions += 1
-            } else if !player.inventory.add(it) {
+            if !stow(it) {
                 emit(.inventoryFull)
                 return
             }

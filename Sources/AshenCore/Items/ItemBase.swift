@@ -134,7 +134,12 @@ public enum ItemBases {
     public static let manaPotion = ItemBase(id: "potion_mana", name: "法力药剂", category: .potion,
                                             size: ItemSize(1, 1), qlvl: 1)
 
+    public static let portalScroll = ItemBase(id: "scroll_portal", name: "回城卷轴", category: .potion,
+                                              size: ItemSize(1, 1), qlvl: 1)
+
+    public static let consumables = [healthPotion, manaPotion, portalScroll]
+
     public static func base(_ id: String) -> ItemBase? {
-        (all + [healthPotion, manaPotion]).first { $0.id == id }
+        all.first { $0.id == id } ?? consumables.first { $0.id == id }
     }
 }
