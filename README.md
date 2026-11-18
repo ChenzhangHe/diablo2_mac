@@ -23,7 +23,9 @@ open build/AshenSigil.app
 | Esc | Close panels |
 | Right click / Q W E R | Use skill bound to that key |
 | T | Skill trees (left click learn; hover + Q/W/E/R/right click to bind) |
-| F5 | Regenerate level (next seed) |
+| P | Read a town portal scroll |
+| Click NPC / portal / waypoint | Talk, trade, travel |
+| F5 | New game (next seed) |
 
 ## Layout
 

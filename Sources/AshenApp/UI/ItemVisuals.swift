@@ -157,7 +157,7 @@ final class Tooltip: SKNode {
 
     private var boxSize = CGSize.zero
 
-    func show(_ item: Item, player: Player, at p: CGPoint, bounds: CGSize) {
+    func show(_ item: Item, player: Player, at p: CGPoint, bounds: CGSize, extra: [(String, NSColor)] = []) {
         var rows: [(String, NSColor)] = []
         let meets = player.canEquip(item) || EquipSlot.slots(for: item.base.category).isEmpty
         for line in item.tooltipLines {
@@ -171,8 +171,9 @@ final class Tooltip: SKNode {
             }
             rows.append((line, color))
         }
-        if item.isPotion { rows.append(("右键使用", NSColor(white: 0.7, alpha: 1))) }
-        showLines(key: "item\(item.id)", title: item.displayName, titleColor: ItemVisuals.labelColor(item),
+        if item.isPotion && extra.isEmpty { rows.append(("右键使用", NSColor(white: 0.7, alpha: 1))) }
+        rows += extra
+        showLines(key: "item\(item.id)\(extra.map(\.0).joined())", title: item.displayName, titleColor: ItemVisuals.labelColor(item),
                   rows: rows, at: p, bounds: bounds)
     }
 

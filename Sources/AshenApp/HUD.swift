@@ -69,7 +69,7 @@ final class HUD: SKNode {
     func update(player p: Player, target: Monster?) {
         lifeOrb.set(fraction: p.stats.lifeFraction, text: "\(Int(p.stats.life.rounded(.up)))/\(Int(p.stats.maxLife))")
         manaOrb.set(fraction: p.stats.manaFraction, text: "\(Int(p.stats.mana))/\(Int(p.stats.maxMana))")
-        belt.text = "[1] 治疗药剂 ×\(p.healthPotions)    [2] 法力药剂 ×\(p.manaPotions)"
+        belt.text = "[1] 治疗药剂 ×\(p.healthPotions)    [2] 法力药剂 ×\(p.manaPotions)    [P] 回城卷轴 ×\(p.portalScrolls)"
         xpLabel.text = "等级 \(p.stats.level)   经验 \(p.xp) / \(p.xpForNextLevel)"
         xpFill.xScale = CGFloat(max(0, min(1, p.xpIntoLevel)))
         var badges: [String] = []

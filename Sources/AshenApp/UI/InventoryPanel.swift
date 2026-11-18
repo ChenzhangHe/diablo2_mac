@@ -211,3 +211,71 @@ final class CharacterPanel: SKNode {
         }
     }
 }
+
+/// A titled grid showing any Inventory (vendor stock or stash). Lives in camera space.
+final class GridPanel: SKNode {
+    private let cols: Int, rowsN: Int
+    private let cell = ItemVisuals.cell
+    let size: CGSize
+    private let content = SKNode()
+    private let title = SKLabelNode(fontNamed: "PingFangSC-Semibold")
+    private let footer = SKLabelNode(fontNamed: "PingFangSC-Regular")
+    private var signature = ""
+
+    init(cols: Int = 10, rows: Int = 8) {
+        self.cols = cols
+        rowsN = rows
+        size = CGSize(width: CGFloat(cols) * ItemVisuals.cell + 40, height: CGFloat(rows) * ItemVisuals.cell + 90)
+        super.init()
+        zPosition = 25_000
+        let bg = SKShapeNode(rectOf: size, cornerRadius: 6)
+        bg.fillColor = NSColor(calibratedRed: 0.06, green: 0.05, blue: 0.04, alpha: 0.96)
+        bg.strokeColor = NSColor(calibratedRed: 0.45, green: 0.38, blue: 0.25, alpha: 1)
+        bg.lineWidth = 2
+        addChild(bg)
+        title.fontSize = 15
+        title.fontColor = ItemVisuals.text
+        title.position = CGPoint(x: 0, y: size.height / 2 - 26)
+        addChild(title)
+        footer.fontSize = 11
+        footer.fontColor = NSColor(white: 0.55, alpha: 1)
+        footer.position = CGPoint(x: 0, y: -size.height / 2 + 14)
+        addChild(footer)
+        for y in 0..<rows { for x in 0..<cols {
+            let r = SKShapeNode(rectOf: CGSize(width: cell, height: cell))
+            r.position = CGPoint(x: origin.x + (CGFloat(x) + 0.5) * cell, y: origin.y - (CGFloat(y) + 0.5) * cell)
+            r.fillColor = NSColor(white: 0, alpha: 0.5)
+            r.strokeColor = NSColor(white: 0.22, alpha: 1)
+            addChild(r)
+        } }
+        addChild(content)
+    }
+
+    required init?(coder: NSCoder) { fatalError() }
+
+    private var origin: CGPoint { CGPoint(x: -CGFloat(cols) * cell / 2, y: size.height / 2 - 44) }
+
+    func contains(camPoint p: CGPoint) -> Bool {
+        abs(p.x - position.x) <= size.width / 2 && abs(p.y - position.y) <= size.height / 2
+    }
+
+    func show(title t: String, footer f: String, inventory inv: Inventory) {
+        title.text = t
+        footer.text = f
+        let sig = t + inv.entries.map { "\($0.item.id)@\($0.x),\($0.y)" }.joined(separator: ";")
+        guard sig != signature else { return }
+        signature = sig
+        content.removeAllChildren()
+        for e in inv.entries {
+            let icon = ItemVisuals.icon(e.item, cell: cell)
+            icon.position = CGPoint(x: origin.x + CGFloat(e.x) * cell, y: origin.y - CGFloat(e.y) * cell)
+            content.addChild(icon)
+        }
+    }
+
+    func cell(at p: CGPoint) -> (Int, Int)? {
+        let local = CGPoint(x: p.x - position.x, y: p.y - position.y)
+        let gx = Int(floor((local.x - origin.x) / cell)), gy = Int(floor((origin.y - local.y) / cell))
+        return gx >= 0 && gx < cols && gy >= 0 && gy < rowsN ? (gx, gy) : nil
+    }
+}

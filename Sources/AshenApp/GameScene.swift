@@ -23,6 +23,9 @@ final class GameScene: SKScene {
     private let messages = SKNode()
     private let menuPanel = MenuPanel(size: CGSize(width: 360, height: 400))
     private var menuMode: String?        // "waypoint" or "npc:<id>"
+    private let gridPanel = GridPanel()
+    /// "shop:<npc>" or "stash" while trading/stashing.
+    private var tradeMode: String?
 
     private var seed: UInt64 = 1
     private var game: GameWorld!
@@ -63,6 +66,8 @@ final class GameScene: SKScene {
         cam.addChild(hotbar)
         menuPanel.isHidden = true
         cam.addChild(menuPanel)
+        gridPanel.isHidden = true
+        cam.addChild(gridPanel)
         aura.lineWidth = 2
         aura.glowWidth = 4
         aura.fillColor = .clear
@@ -92,6 +97,7 @@ final class GameScene: SKScene {
         characterPanel.position = CGPoint(x: -size.width / 2 + CharacterPanel.size.width / 2 + 12, y: 30)
         messages.position = CGPoint(x: 0, y: -size.height / 2 + 120)
         skillPanel.position = CGPoint(x: 0, y: 30)
+        gridPanel.position = CGPoint(x: -size.width / 2 + gridPanel.size.width / 2 + 12, y: 30)
         hotbar.position = CGPoint(x: 0, y: -size.height / 2 + 72)
     }
 
@@ -107,6 +113,14 @@ final class GameScene: SKScene {
         }
         if ProcessInfo.processInfo.environment["ASHEN_DEBUG_LOOT"] != nil { debugLoot() }
         if ProcessInfo.processInfo.environment["ASHEN_DEBUG_SKILLS"] != nil { debugSkills() }
+        if ProcessInfo.processInfo.environment["ASHEN_DEBUG_SHOP"] != nil {
+            game.player.gold = 800
+            openTrade("shop:smith")
+            DispatchQueue.main.async { [self] in
+                let cp = CGPoint(x: gridPanel.position.x - 120, y: gridPanel.position.y + 100)
+                if let v = view { lastMouseInView = v.convert(CGPoint(x: cp.x + cam.position.x, y: cp.y + cam.position.y), from: self) }
+            }
+        }
         syncWorld()
     }
 
@@ -373,6 +387,11 @@ final class GameScene: SKScene {
         if !inventoryPanel.isHidden { inventoryPanel.refresh(p) }
         if !characterPanel.isHidden { characterPanel.refresh(p) }
         if !skillPanel.isHidden { skillPanel.refresh(p) }
+        if let inv = tradeInventory {
+            let title = tradeMode == "stash" ? "储物箱" : (NPCs.def(tradeNPC ?? "")?.name ?? "商店")
+            let footer = tradeMode == "stash" ? "左键取出 · 背包中右键存入" : "左键购买 · 背包中右键出售 · 金币 \(p.gold)"
+            gridPanel.show(title: title, footer: footer, inventory: inv)
+        }
         hotbar.update(p, time: game.time)
         updateAura(p)
         syncCursorAndTooltip()
@@ -408,8 +427,16 @@ final class GameScene: SKScene {
         }
         if item == nil, p.cursor == nil, let gid = hoveredGround, let g = game.groundItems.first(where: { $0.id == gid }),
            case .item(let it) = g.content { item = it }
+        var extra: [(String, NSColor)] = []
+        if item == nil, p.cursor == nil, !gridPanel.isHidden, let (x, y) = gridPanel.cell(at: cp),
+           let e = tradeInventory?.entry(at: x, y) {
+            item = e.item
+            if tradeNPC != nil { extra = [("价格: \(e.item.price) 金币", p.gold >= e.item.price ? ItemVisuals.gold : ItemVisuals.bad)] }
+        } else if let it = item, tradeNPC != nil, p.inventory.items.contains(where: { $0.id == it.id }) {
+            extra = [("出售价格: \(it.sellPrice) 金币", ItemVisuals.gold)]
+        }
         if let item {
-            tooltip.show(item, player: p, at: cp, bounds: size)
+            tooltip.show(item, player: p, at: cp, bounds: size, extra: extra)
         } else if !skillPanel.isHidden, let sid = skillPanel.skill(at: cp), let d = Skills.def(sid) {
             tooltip.showLines(key: "skill\(sid)\(p.skills.level(sid))\(p.level)\(p.hasShield)", title: d.name,
                               titleColor: SkillVisuals.color(d.tree), rows: SkillVisuals.tooltipRows(d, player: p), at: cp, bounds: size)
@@ -510,6 +537,30 @@ final class GameScene: SKScene {
         menuMode = nil
     }
 
+    private func openTrade(_ mode: String) {
+        closeMenu()
+        tradeMode = mode
+        gridPanel.isHidden = false
+        characterPanel.isHidden = true
+        inventoryPanel.isHidden = false
+    }
+
+    private func closeTrade() {
+        tradeMode = nil
+        gridPanel.isHidden = true
+    }
+
+    private var tradeNPC: String? {
+        guard let m = tradeMode, m.hasPrefix("shop:") else { return nil }
+        return String(m.dropFirst(5))
+    }
+
+    /// Inventory currently shown in the left grid.
+    private var tradeInventory: Inventory? {
+        if tradeMode == "stash" { return game.player.stash }
+        return tradeNPC.flatMap { game.vendors[$0] }
+    }
+
     private func openWaypointMenu() {
         let rows = Areas.actOne.filter(\.hasWaypoint).map { a in
             (a.id, (a.id == game.area.id ? "▸ " : "") + a.name + (game.player.waypoints.contains(a.id) ? "" : "  (未发现)"),
@@ -556,9 +607,9 @@ final class GameScene: SKScene {
             game.player.stats.mana = game.player.stats.maxMana
             message("你感到焕然一新", color: ItemVisuals.gold)
         case "trade":
-            message("商店即将开张……", color: ItemVisuals.text)
+            openTrade("shop:" + mode.dropFirst(4))
         case "stash":
-            message("储物箱即将开放……", color: ItemVisuals.text)
+            openTrade("stash")
         default:
             break
         }
@@ -653,6 +704,7 @@ final class GameScene: SKScene {
                 message("出售: \(name)  +\(g) 金币", color: ItemVisuals.gold)
             case .areaEntered:
                 closeMenu()
+                closeTrade()
                 buildArea()
             case .openWaypoints:
                 openWaypointMenu()
@@ -736,6 +788,7 @@ final class GameScene: SKScene {
         if !characterPanel.isHidden && characterPanel.contains(camPoint: cp) { return true }
         if !skillPanel.isHidden && skillPanel.contains(camPoint: cp) { return true }
         if !menuPanel.isHidden && menuPanel.contains(camPoint: cp) { return true }
+        if !gridPanel.isHidden && gridPanel.contains(camPoint: cp) { return true }
         return false
     }
 
@@ -796,6 +849,12 @@ final class GameScene: SKScene {
                 return
             }
             closeMenu()
+        }
+        if let cp = mouseCamPoint(), !gridPanel.isHidden, gridPanel.contains(camPoint: cp) {
+            if let (x, y) = gridPanel.cell(at: cp), let e = tradeInventory?.entry(at: x, y) {
+                if let npc = tradeNPC { game.buy(from: npc, itemID: e.item.id) } else { game.moveFromStash(itemID: e.item.id) }
+            }
+            return
         }
         if let cp = mouseCamPoint(), !skillPanel.isHidden, skillPanel.contains(camPoint: cp) {
             if let sid = skillPanel.skill(at: cp), let err = game.player.learnSkill(sid) {
@@ -865,7 +924,10 @@ final class GameScene: SKScene {
         guard let cp = mouseCamPoint(), !inventoryPanel.isHidden, game.player.cursor == nil else { return }
         switch inventoryPanel.hit(cp) {
         case .cell(let x, let y):
-            if let e = game.player.inventory.entry(at: x, y) { game.inventoryUse(itemID: e.item.id) }
+            guard let e = game.player.inventory.entry(at: x, y) else { break }
+            if let npc = tradeNPC { game.sell(itemID: e.item.id, to: npc) }
+            else if tradeMode == "stash" { game.moveToStash(itemID: e.item.id) }
+            else { game.inventoryUse(itemID: e.item.id) }
         case .slot(let s):
             game.unequip(s)
         default:
@@ -905,9 +967,14 @@ final class GameScene: SKScene {
             case "t": skillPanel.isHidden.toggle(); return
             case "1": game.drinkHealthPotion(); return
             case "2": game.drinkManaPotion(); return
-            case "i", "b": inventoryPanel.isHidden.toggle(); return
+            case "i", "b": inventoryPanel.isHidden.toggle(); if inventoryPanel.isHidden { closeTrade() }; return
+            case "p":
+                if !game.castTownPortal() {
+                    message(game.area.isTown ? "营地中无法使用" : "没有回城卷轴", color: ItemVisuals.bad)
+                }
+                return
             case "c": characterPanel.isHidden.toggle(); return
-            case "\u{1b}": closeMenu(); inventoryPanel.isHidden = true; characterPanel.isHidden = true; skillPanel.isHidden = true; return
+            case "\u{1b}": closeMenu(); closeTrade(); inventoryPanel.isHidden = true; characterPanel.isHidden = true; skillPanel.isHidden = true; return
             default: break
             }
         }
