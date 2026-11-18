@@ -1,0 +1,28 @@
+# 灰烬圣印 · Ashen Sigil
+
+An original isometric action RPG for macOS (Apple Silicon), written in Swift + SpriteKit.
+See [PLAN.md](PLAN.md) for the design and milestone plan.
+
+## Run
+
+```bash
+swift run AshenSigil          # debug run
+swift test                    # core logic tests
+./scripts/bundle.sh           # build/AshenSigil.app (release)
+open build/AshenSigil.app
+```
+
+## Controls (current)
+
+| Key | Action |
+|---|---|
+| WASD / arrows | Move |
+| R | Regenerate level (next seed) |
+
+## Layout
+
+- `Sources/AshenCore` — pure game logic (world gen, RNG, math). No rendering; unit-tested.
+- `Sources/AshenApp` — SpriteKit rendering, input, UI. All art is procedurally generated.
+- `Tests/AshenCoreTests` — XCTest suite.
+
+Debug: `ASHEN_SNAPSHOT=out.png swift run AshenSigil` renders a screenshot and quits.
