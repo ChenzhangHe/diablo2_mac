@@ -47,3 +47,41 @@ final class QuestTests: XCTestCase {
         XCTAssertEqual(w.player.inventory.items.first?.quality, .rare)
     }
 }
+
+final class BossTests: XCTestCase {
+    func testBossSpawnsInSanctumOnlyWhileQuestOpen() {
+        let w = GameWorld(seed: 1, startArea: "abbess_sanctum")
+        let boss = w.monsters.first { $0.kind.behavior == .boss }
+        XCTAssertNotNil(boss)
+        XCTAssertGreaterThan(boss!.stats.maxLife, 500)
+        let done = GameWorld(seed: 1)
+        done.player.quests["q_abbess"] = .rewarded
+        done.travel(to: "abbess_sanctum", arrival: .entrance)
+        XCTAssertNil(done.monsters.first { $0.kind.behavior == .boss })
+    }
+
+    func testBossUsesAbilities() {
+        let w = GameWorld(seed: 2, startArea: "abbess_sanctum")
+        let i = w.monsters.firstIndex { $0.kind.behavior == .boss }!
+        w.player.mover.position = w.monsters[i].position + Vec2(2, 0)
+        w.player.stats.maxLife = 100_000; w.player.stats.life = 100_000
+        var novas: Set<String> = []
+        for _ in 0..<(60 * 14) {
+            w.update(dt: 1.0 / 60)
+            for e in w.drainEvents() { if case .nova(let id, _, _) = e { novas.insert(id) } }
+        }
+        XCTAssertTrue(novas.contains("boss_frost"))
+        XCTAssertTrue(novas.contains("boss_summon"))
+        XCTAssertGreaterThan(w.monsters.filter { $0.packID == 9_999 && $0.kind.behavior != .boss }.count, 0)
+    }
+
+    func testKillingBossCompletesActAndOpensExit() {
+        let w = GameWorld(seed: 3, startArea: "abbess_sanctum")
+        w.player.quests["q_abbess"] = .active
+        let i = w.monsters.firstIndex { $0.kind.behavior == .boss }!
+        w.apply(.hit(damage: 1e9, crit: false), toMonsterAt: i)
+        XCTAssertEqual(w.player.quest("q_abbess"), .complete)
+        XCTAssertTrue(w.interactables.contains { $0.kind == .areaExit(toArea: "reedford", arrival: .entrance) })
+        XCTAssertGreaterThanOrEqual(w.groundItems.filter { if case .item = $0.content { true } else { false } }.count, 5)
+    }
+}

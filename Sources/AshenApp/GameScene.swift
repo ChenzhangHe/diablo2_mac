@@ -477,7 +477,9 @@ final class GameScene: SKScene {
         switch id {
         case "cinder_nova", "monster_fire": color = NSColor(calibratedRed: 1, green: 0.45, blue: 0.1, alpha: 1)
         case "quake_cry": color = NSColor(calibratedRed: 0.75, green: 0.6, blue: 0.4, alpha: 1)
-        case "dread_howl": color = NSColor(calibratedRed: 0.6, green: 0.3, blue: 0.8, alpha: 1)
+        case "dread_howl", "boss_summon": color = NSColor(calibratedRed: 0.6, green: 0.3, blue: 0.8, alpha: 1)
+        case "boss_frost": color = NSColor(calibratedRed: 0.5, green: 0.85, blue: 1, alpha: 1)
+        case "boss_enrage": color = NSColor(calibratedRed: 1, green: 0.15, blue: 0.1, alpha: 1)
         default: color = NSColor(calibratedRed: 0.5, green: 0.15, blue: 0.15, alpha: 1)
         }
         let full = isoEllipse(radius: radius)
@@ -709,6 +711,9 @@ final class GameScene: SKScene {
                     hud.showBanner("任务目标完成", color: ItemVisuals.gold)
                     message("\(q.name)：返回营地找 \(giver)", color: ItemVisuals.gold)
                 }
+            case .bossDefeated(let name):
+                hud.showBanner("\(name) 已被击败", color: ItemVisuals.gold)
+                message("第一枚碎印落入你手中。返回营地向长老复命。", color: ItemVisuals.gold)
             case .notEnoughGold:
                 message("金币不足", color: ItemVisuals.bad)
             case .bought(let name):

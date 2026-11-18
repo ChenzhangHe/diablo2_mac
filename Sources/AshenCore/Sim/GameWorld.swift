@@ -323,7 +323,12 @@ public final class GameWorld {
         emit(.monsterDied(m.id, at: m.position, xp: xp))
         if player.gainXP(xp) > 0 { emit(.levelUp(player.level)) }
         let picks = m.rank == .unique ? 3 : (m.rank == .champion ? 2 : 1)
-        dropLoot(LootTable.roll(monsterLevel: m.stats.level, picks: picks, guaranteedItem: m.rank == .unique,
+        if m.kind.behavior == .boss {
+            emit(.bossDefeated(m.displayName))
+            interactables.append(Interactable(id: makeID(), kind: .areaExit(toArea: Areas.actOne[0].id, arrival: .entrance),
+                                              position: m.position + Vec2(1.2, 1.2), name: "返回 芦苇渡口"))
+        }
+        dropLoot(LootTable.roll(monsterLevel: m.stats.level, isBoss: m.kind.behavior == .boss, picks: picks, guaranteedItem: m.rank == .unique,
                                 goldFind: player.goldFind, magicFind: m.rank == .normal ? 0 : 50,
                                 nextID: { self.makeID() }, rng: &rng), at: m.position)
         if m.affixes.contains(.fireTouched) {
@@ -438,6 +443,7 @@ public final class GameWorld {
         case .chase, .attack:
             let ranged = kind.behavior == .ranged || kind.behavior == .shaman
             if kind.behavior == .shaman { tryResurrect(i) }
+            if kind.behavior == .boss { bossAbilities(i); if !playerAlive { break } }
             let range = ranged ? kind.reach : kind.reach + kind.radius + player.mover.radius
             let inRange = dist <= range && (!ranged || canSee(pos, ppos))
             if ranged && dist < 2.5 {
@@ -583,6 +589,54 @@ public final class GameWorld {
         // Keep monsters away from the entrance.
         monsters.removeAll { $0.position.distance(to: Vec2(center: level.spawn)) < 8 }
         spawnQuestTargets()
+        if area.style == .arena && [.notStarted, .active].contains(player.quest("q_abbess")) { spawnBoss() }
+    }
+
+    private func spawnBoss() {
+        let spot = level.markers["boss"] ?? level.exit
+        let id = spawn(Bestiary.abbess, at: Vec2(center: spot), packID: 9_999)
+        guard let i = monsters.firstIndex(where: { $0.id == id }) else { return }
+        monsters[i].promote(to: .unique, affixes: [], name: "溺亡院长 莫尔薇")
+        monsters[i].questID = "q_abbess"
+        monsters[i].abilityTimers = ["nova": time + 5, "summon": time + 8]
+    }
+
+    /// Boss specials: cold nova, summoning, enrage.
+    private func bossAbilities(_ i: Int) {
+        let m = monsters[i]
+        let dist = m.position.distance(to: player.position)
+        if !m.enraged && m.stats.lifeFraction < 0.5 {
+            monsters[i].enraged = true
+            monsters[i].mover.speed *= 1.4
+            monsters[i].stats.attacksPerSecond *= 1.4
+            emit(.nova("boss_enrage", at: m.position, radius: 1.5))
+        }
+        if time >= m.abilityTimers["nova", default: 0] && dist < 5 {
+            monsters[i].abilityTimers["nova"] = time + (m.enraged ? 5 : 7)
+            emit(.nova("boss_frost", at: m.position, radius: 4))
+            if dist <= 4 {
+                let raw = Double(rng.int(10...(22 + m.stats.level)))
+                damagePlayer(.hit(damage: Combat.mitigate(raw, type: .cold, defender: player.stats), crit: false))
+                player.chilledUntil = time + 3
+            }
+        }
+        if time >= m.abilityTimers["summon", default: 0] {
+            monsters[i].abilityTimers["summon"] = time + 12
+            let alive = monsters.filter { $0.isAlive && $0.packID == 9_999 && $0.id != m.id }.count
+            if alive < 6 {
+                for k in 0..<2 {
+                    let a = Double(k) * .pi + rng.unit()
+                    var p = m.position + Vec2(cos(a), sin(a)) * 1.5
+                    if !level.map.isWalkable(p.grid) { p = m.position }
+                    let id = spawn(Bestiary.drownedSister.scaled(to: area.level), at: p, packID: 9_999)
+                    if let j = monsters.firstIndex(where: { $0.id == id }) {
+                        monsters[j].promote(to: .minion, affixes: [])
+                        monsters[j].ai = .chase
+                    }
+                }
+                emit(.nova("boss_summon", at: m.position, radius: 2))
+            }
+        }
     }
 
     /// Quest uniques live in the spawn spot farthest from the entrance.

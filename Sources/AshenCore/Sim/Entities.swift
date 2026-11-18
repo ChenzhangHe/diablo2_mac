@@ -23,6 +23,8 @@ public struct Monster: Sendable, Identifiable {
     public var vulnerableUntil = 0.0
     public var vulnerability = 0.0
     public var questID: String?
+    public var abilityTimers: [String: Double] = [:]
+    public var enraged = false
     public var resurrectCooldown = 0.0
     public var resurrections = 0
     public var rank: MonsterRank = .normal
@@ -285,6 +287,7 @@ public enum GameEvent: Sendable, Equatable {
     case openWaypoints
     case talk(String)
     case questUpdated(String, QuestState)
+    case bossDefeated(String)
     case notEnoughGold
     case bought(String)
     case sold(String, Int)

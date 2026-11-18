@@ -6,6 +6,7 @@ public enum MonsterBehavior: String, Codable, Sendable {
     case ranged       // keeps distance, shoots projectiles
     case hitAndRun    // darts in, strikes, darts away
     case shaman       // ranged caster that revives fallen packmates
+    case boss         // melee with timed special abilities
 }
 
 public enum ProjectileVisual: String, Sendable {
@@ -93,6 +94,13 @@ public enum Bestiary {
         attackRating: 75, defense: 35, resist: Resistances(poison: 75),
         speed: 2.2, attacksPerSecond: 0.9, reach: 1.2, aggroRadius: 7, behavior: .melee,
         packSize: 3...5, xp: 30, radius: 0.32, color: (0.9, 0.86, 0.75), isUndead: true)
+
+    /// Act I boss. Base life is ×4 when promoted to unique.
+    public static let abbess = MonsterKind(
+        id: "abbess", name: "溺亡院长", level: 9, life: 150...165, damage: 8...16, damageType: .physical,
+        attackRating: 130, defense: 45, resist: Resistances(fire: 20, cold: 75, lightning: 20, poison: 50),
+        speed: 2.6, attacksPerSecond: 0.9, reach: 1.4, aggroRadius: 14, behavior: .boss,
+        packSize: 1...1, xp: 600, radius: 0.5, color: (0.55, 0.7, 0.72), isUndead: true)
 
     public static let actOne: [MonsterKind] = [murkling, husk, hollowArcher, gloomBat]
     public static let all: [MonsterKind] = [murkling, husk, hollowArcher, gloomBat, mireHexer, fenLurker, drownedSister, boneWarden]
