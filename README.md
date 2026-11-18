@@ -26,6 +26,7 @@ open build/AshenSigil.app
 | P | Read a town portal scroll |
 | Tab | Automap |
 | L | Quest log |
+| M | Mute sound |
 | Click NPC / portal / waypoint | Talk, trade, travel |
 | F5 | New game (only with `ASHEN_DEV=1`) |
 

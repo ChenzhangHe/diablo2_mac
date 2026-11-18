@@ -681,8 +681,31 @@ final class GameScene: SKScene {
         return nil
     }
 
+    private func playSound(for e: GameEvent) {
+        let sfx = Sound.shared
+        switch e {
+        case .damage(_, _, let crit, let toPlayer): sfx.play(toPlayer ? .playerHurt : (crit ? .crit : .hit), volume: toPlayer ? 0.8 : 0.7)
+        case .miss: sfx.play(.miss, volume: 0.5)
+        case .blocked: sfx.play(.block, volume: 0.6)
+        case .swing(let attacker, _, _): if attacker == nil { sfx.play(.swing, volume: 0.5) }
+        case .monsterDied: sfx.play(.monsterDeath, volume: 0.6)
+        case .levelUp: sfx.play(.levelUp)
+        case .potion: sfx.play(.potion)
+        case .pickedUp(let name): sfx.play(name.hasSuffix("金币") ? .gold : .pickup)
+        case .nova(let id, _, _): sfx.play(id == "boss_enrage" ? .roar : .nova, volume: 0.8)
+        case .skillUsed(let id, _, _):
+            if Skills.def(id)?.kind == .buff { sfx.play(.buff) } else { sfx.play(.cast, volume: 0.5) }
+        case .areaEntered: sfx.play(.portal, volume: 0.6)
+        case .notEnoughMana, .notEnoughGold, .inventoryFull, .cannotEquip, .skillUnavailable: sfx.play(.denied, volume: 0.5)
+        case .bossDefeated: sfx.play(.roar)
+        case .bought, .sold: sfx.play(.gold, volume: 0.7)
+        default: break
+        }
+    }
+
     private func handleEvents() {
         for e in game.drainEvents() {
+            playSound(for: e)
             switch e {
             case .damage(let at, let amount, let crit, let toPlayer):
                 floatText("\(amount)\(crit ? "!" : "")", at: at,
@@ -1028,6 +1051,10 @@ final class GameScene: SKScene {
             switch k {
             case "t": skillPanel.isHidden.toggle(); return
             case "\t": automap.isHidden.toggle(); return
+            case "m":
+                Sound.shared.muted.toggle()
+                message(Sound.shared.muted ? "音效：关" : "音效：开")
+                return
             case "l":
                 questLog.isHidden.toggle()
                 if !questLog.isHidden { refreshQuestLog() }
