@@ -16,6 +16,7 @@ open build/AshenSigil.app
 
 | Key | Action |
 |---|---|
+| Left click / hold | Move (A* pathfinding) |
 | WASD / arrows | Move |
 | R | Regenerate level (next seed) |
 
