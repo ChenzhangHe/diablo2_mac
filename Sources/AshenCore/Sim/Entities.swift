@@ -22,6 +22,8 @@ public struct Monster: Sendable, Identifiable {
     public var stunnedUntil = 0.0
     public var vulnerableUntil = 0.0
     public var vulnerability = 0.0
+    public var resurrectCooldown = 0.0
+    public var resurrections = 0
     public var rank: MonsterRank = .normal
     public var affixes: [EliteAffix] = []
     public var uniqueName: String?
@@ -244,6 +246,7 @@ public struct Projectile: Sendable, Identifiable {
     public let faction: Faction
     public let attacker: CombatStats
     public let radius: Double
+    public var visual: ProjectileVisual = .arrow
 }
 
 /// Things that happened this tick — consumed by the renderer for feedback (numbers, flashes, sounds).
@@ -253,6 +256,7 @@ public enum GameEvent: Sendable, Equatable {
     case swing(attacker: EntityID?, at: Vec2, toward: Vec2)   // nil attacker = player
     case monsterDied(EntityID, at: Vec2, xp: Int)
     case levelUp(Int)
+    case resurrected(EntityID, by: EntityID)
     case playerDied
     case playerRespawned
     case potion(health: Bool)

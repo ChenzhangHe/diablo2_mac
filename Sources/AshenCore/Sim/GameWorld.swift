@@ -381,9 +381,11 @@ public final class GameWorld {
             }
 
         case .chase, .attack:
-            let range = kind.behavior == .ranged ? kind.reach : kind.reach + kind.radius + player.mover.radius
-            let inRange = dist <= range && (kind.behavior != .ranged || canSee(pos, ppos))
-            if kind.behavior == .ranged && dist < 2.5 {
+            let ranged = kind.behavior == .ranged || kind.behavior == .shaman
+            if kind.behavior == .shaman { tryResurrect(i) }
+            let range = ranged ? kind.reach : kind.reach + kind.radius + player.mover.radius
+            let inRange = dist <= range && (!ranged || canSee(pos, ppos))
+            if ranged && dist < 2.5 {
                 // Kite away from the player.
                 monsters[i].repathTimer -= dt
                 if monsters[i].repathTimer <= 0 {
@@ -412,15 +414,34 @@ public final class GameWorld {
         monsters[i].mover.update(dt: dt, map: level.map)
     }
 
+    /// Shamans bring a dead packmate (or any nearby fallen non-undead) back to life.
+    private func tryResurrect(_ i: Int) {
+        guard monsters[i].resurrectCooldown <= time else { return }
+        let pos = monsters[i].position
+        guard let j = monsters.indices.first(where: {
+            !monsters[$0].isAlive && monsters[$0].deathTime != nil && !monsters[$0].kind.isUndead
+                && monsters[$0].kind.behavior != .shaman && monsters[$0].rank != .unique
+                && monsters[$0].position.distance(to: pos) < 7 && monsters[$0].resurrections < 2
+        }) else { return }
+        monsters[i].resurrectCooldown = time + 4
+        monsters[j].stats.life = monsters[j].stats.maxLife
+        monsters[j].deathTime = nil
+        monsters[j].resurrections += 1
+        monsters[j].ai = .chase
+        emit(.resurrected(monsters[j].id, by: monsters[i].id))
+    }
+
     private func monsterAttack(_ i: Int) {
         let m = monsters[i]
         monsters[i].cooldown = 1 / m.stats.attacksPerSecond * (0.85 + rng.unit() * 0.3)
         emit(.swing(attacker: m.id, at: m.position, toward: player.position))
-        if m.kind.behavior == .ranged {
+        if m.kind.behavior == .ranged || m.kind.behavior == .shaman {
             let dir = (player.position - m.position).normalized
-            projectiles.append(Projectile(id: makeID(), position: m.position + dir * 0.4, velocity: dir * 9,
+            let speed = m.kind.projectile == .arrow ? 9.0 : 6.5
+            projectiles.append(Projectile(id: makeID(), position: m.position + dir * 0.4, velocity: dir * speed,
                                           remaining: m.kind.reach + 3, faction: .monsters,
-                                          attacker: m.stats, radius: 0.15))
+                                          attacker: m.stats, radius: m.kind.projectile == .arrow ? 0.15 : 0.25,
+                                          visual: m.kind.projectile))
         } else {
             let outcome = Combat.resolveAttack(attacker: m.stats, defender: player.stats, rng: &rng)
             damagePlayer(outcome)

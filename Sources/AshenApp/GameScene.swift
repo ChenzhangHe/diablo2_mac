@@ -255,9 +255,23 @@ final class GameScene: SKScene {
         for pr in game.projectiles {
             live.insert(pr.id)
             let node = projectileNodes[pr.id] ?? {
-                let n = SKShapeNode(rectOf: CGSize(width: 16, height: 2))
-                n.fillColor = NSColor(calibratedRed: 0.9, green: 0.85, blue: 0.7, alpha: 1)
-                n.strokeColor = .clear
+                let n: SKShapeNode
+                switch pr.visual {
+                case .arrow:
+                    n = SKShapeNode(rectOf: CGSize(width: 16, height: 2))
+                    n.fillColor = NSColor(calibratedRed: 0.9, green: 0.85, blue: 0.7, alpha: 1)
+                    n.strokeColor = .clear
+                case .fireBolt:
+                    n = SKShapeNode(ellipseOf: CGSize(width: 14, height: 9))
+                    n.fillColor = NSColor(calibratedRed: 1, green: 0.5, blue: 0.1, alpha: 1)
+                    n.strokeColor = NSColor(calibratedRed: 1, green: 0.85, blue: 0.3, alpha: 1)
+                    n.glowWidth = 6
+                case .coldBolt:
+                    n = SKShapeNode(ellipseOf: CGSize(width: 14, height: 8))
+                    n.fillColor = NSColor(calibratedRed: 0.5, green: 0.8, blue: 1, alpha: 1)
+                    n.strokeColor = .white
+                    n.glowWidth = 5
+                }
                 worldNode.addChild(n)
                 projectileNodes[pr.id] = n
                 return n
@@ -505,6 +519,11 @@ final class GameScene: SKScene {
                 message("法力不足", color: NSColor(calibratedRed: 0.5, green: 0.6, blue: 1, alpha: 1))
             case .skillUnavailable(let why):
                 message(why, color: ItemVisuals.bad)
+            case .resurrected(let id, _):
+                if let old = monsterNodes.removeValue(forKey: id) { old.removeFromParent() }  // rebuilt alive next sync
+                if let m = game.monster(id) {
+                    floatText("复活", at: m.position, color: NSColor(calibratedRed: 0.8, green: 0.4, blue: 1, alpha: 1), size: 12)
+                }
             case .potion, .itemDropped:
                 break
             }
