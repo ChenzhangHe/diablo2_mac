@@ -1,7 +1,9 @@
 public enum Tile: UInt8, Sendable {
-    case void, floor, wall, door
+    case void, floor, wall, door, tree, rock, water, path
 
-    public var walkable: Bool { self == .floor || self == .door }
+    public var walkable: Bool { self == .floor || self == .door || self == .path }
+    /// Tall obstacles that are drawn as blocks and can hide the player.
+    public var isTall: Bool { self == .wall || self == .tree }
 }
 
 public struct TileMap: Sendable {
@@ -45,5 +47,23 @@ public struct TileMap: Sendable {
             }
         }
         return seen
+    }
+}
+
+extension TileMap {
+    /// BFS step distance from `start` over walkable tiles (4-connected). Unreachable = nil.
+    public func distances(from start: GridPoint) -> [GridPoint: Int] {
+        guard isWalkable(start) else { return [:] }
+        var dist: [GridPoint: Int] = [start: 0]
+        var queue = [start]
+        var head = 0
+        while head < queue.count {
+            let p = queue[head]; head += 1
+            for d in GridPoint.cardinals {
+                let n = p + d
+                if isWalkable(n) && dist[n] == nil { dist[n] = dist[p]! + 1; queue.append(n) }
+            }
+        }
+        return dist
     }
 }

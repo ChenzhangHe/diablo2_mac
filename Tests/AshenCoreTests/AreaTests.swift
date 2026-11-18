@@ -42,3 +42,36 @@ final class AreaTests: XCTestCase {
         XCTAssertTrue(w.monster(imp)!.isAlive)
     }
 }
+
+final class GeneratorTests: XCTestCase {
+    func testEveryAreaGeneratesAConnectedLevel() {
+        for area in Areas.actOne {
+            for seed in UInt64(1)...5 {
+                let lv = LevelGenerator.generate(area, seed: seed)
+                let reach = lv.map.reachable(from: lv.spawn)
+                XCTAssertTrue(lv.map.isWalkable(lv.spawn), "\(area.name) seed \(seed) spawn")
+                XCTAssertTrue(reach.contains(lv.exit), "\(area.name) seed \(seed) exit unreachable")
+                if let wp = lv.waypoint { XCTAssertTrue(reach.contains(wp), "\(area.name) waypoint") }
+                if area.hasWaypoint { XCTAssertNotNil(lv.waypoint, "\(area.name) needs a waypoint") }
+                for (name, m) in lv.markers { XCTAssertTrue(reach.contains(m), "\(area.name) marker \(name)") }
+                if !area.isTown && area.style != .arena {
+                    XCTAssertGreaterThan(lv.rooms.count, 4, "\(area.name) spawn spots")
+                    XCTAssertGreaterThan(lv.map.distances(from: lv.spawn)[lv.exit] ?? 0, 20, "\(area.name) exit too close")
+                }
+            }
+        }
+    }
+
+    func testCaveFillsAReasonableFraction() {
+        let lv = LevelGenerator.cave(size: 70, seed: 3)
+        let floors = lv.map.allPoints.filter { lv.map.isWalkable($0) }.count
+        XCTAssertGreaterThan(floors, 70 * 70 / 5)
+    }
+
+    func testGeneratorsAreDeterministic() {
+        for area in Areas.actOne {
+            let a = LevelGenerator.generate(area, seed: 9), b = LevelGenerator.generate(area, seed: 9)
+            XCTAssertEqual(a.spawn, b.spawn); XCTAssertEqual(a.exit, b.exit); XCTAssertEqual(a.rooms, b.rooms)
+        }
+    }
+}

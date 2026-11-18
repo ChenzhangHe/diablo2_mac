@@ -106,7 +106,7 @@ final class GameScene: SKScene {
         for p in map.allPoints {
             let pos = screen(Vec2(center: p))
             switch map[p] {
-            case .floor, .door:
+            case .floor, .door, .path, .tree, .rock, .water:
                 let n = SKSpriteNode(texture: Textures.floors[rng.int(0...3)])
                 n.size = CGSize(width: Iso.tileWidth, height: Iso.tileHeight)
                 n.position = pos

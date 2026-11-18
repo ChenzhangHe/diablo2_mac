@@ -11,6 +11,15 @@ public struct GeneratedLevel: Sendable {
     public var rooms: [Room]
     public var spawn: GridPoint
     public var exit: GridPoint
+    public var waypoint: GridPoint? = nil
+    /// Named spots (NPCs in town, boss position in arenas...).
+    public var markers: [String: GridPoint] = [:]
+
+    public init(map: TileMap, rooms: [Room], spawn: GridPoint, exit: GridPoint,
+                waypoint: GridPoint? = nil, markers: [String: GridPoint] = [:]) {
+        self.map = map; self.rooms = rooms; self.spawn = spawn; self.exit = exit
+        self.waypoint = waypoint; self.markers = markers
+    }
 }
 
 /// Classic rooms-and-corridors dungeon generator.
