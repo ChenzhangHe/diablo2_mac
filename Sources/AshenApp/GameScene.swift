@@ -10,6 +10,9 @@ final class GameScene: SKScene {
     private let hud = HUD()
     private let inventoryPanel = InventoryPanel()
     private let characterPanel = CharacterPanel()
+    private let skillPanel = SkillPanel()
+    private let hotbar = Hotbar()
+    private let aura = SKShapeNode(ellipseOf: CGSize(width: 54, height: 27))
     private let tooltip = Tooltip()
     private var cursorIcon: SKNode?
     private var cursorItemID: Int?
@@ -51,6 +54,14 @@ final class GameScene: SKScene {
         characterPanel.isHidden = true
         cam.addChild(inventoryPanel)
         cam.addChild(characterPanel)
+        skillPanel.isHidden = true
+        cam.addChild(skillPanel)
+        cam.addChild(hotbar)
+        aura.lineWidth = 2
+        aura.glowWidth = 4
+        aura.fillColor = .clear
+        aura.isHidden = true
+        worldNode.addChild(aura)
         cam.addChild(tooltip)
         messages.zPosition = 20_002
         cam.addChild(messages)
@@ -73,7 +84,9 @@ final class GameScene: SKScene {
         hud.layout(size: size)
         inventoryPanel.position = CGPoint(x: size.width / 2 - InventoryPanel.size.width / 2 - 12, y: 30)
         characterPanel.position = CGPoint(x: -size.width / 2 + CharacterPanel.size.width / 2 + 12, y: 30)
-        messages.position = CGPoint(x: 0, y: -size.height / 2 + 90)
+        messages.position = CGPoint(x: 0, y: -size.height / 2 + 120)
+        skillPanel.position = CGPoint(x: 0, y: 30)
+        hotbar.position = CGPoint(x: 0, y: -size.height / 2 + 72)
     }
 
     // MARK: - Level
@@ -120,12 +133,37 @@ final class GameScene: SKScene {
 
         player.setDead(false)
         worldNode.addChild(player)
+        worldNode.addChild(aura)
         if ProcessInfo.processInfo.environment["ASHEN_DEBUG_WALK_TO_EXIT"] != nil {
             game.commandMove(to: Vec2(center: game.level.exit))
         }
         if ProcessInfo.processInfo.environment["ASHEN_DEBUG_LOOT"] != nil { debugLoot() }
+        if ProcessInfo.processInfo.environment["ASHEN_DEBUG_SKILLS"] != nil { debugSkills() }
         syncWorld()
-        infoLabel.text = "灰烬圣印 Ashen Sigil · M3   seed \(seed)   左键 移动/攻击/拾取 · 1/2 药剂 · I 物品栏 · C 角色 · R 新地图"
+        infoLabel.text = "灰烬圣印 Ashen Sigil · M4   seed \(seed)   左键 移动/攻击/拾取 · 右键/QWER 技能 · 1/2 药剂 · I 物品 · C 角色 · T 技能 · F5 新地图"
+    }
+
+    private func debugSkills() {
+        game.player.gainXP(Experience.total(forLevel: 24))
+        for id in ["rallying_roar", "weapon_mastery", "flame_strike", "cleave", "dread_howl", "quake_cry", "bulwark",
+                   "ember_ward", "unyielding", "ember_whirl", "cinder_nova", "shield_bash", "iron_shout"] {
+            _ = game.player.learnSkill(id)
+        }
+        game.player.hotbar = ["rmb": "flame_strike", "q": "cinder_nova", "w": "quake_cry", "e": "rallying_roar", "r": "ember_whirl"]
+        skillPanel.isHidden = false
+        // Spawn a pack next to the player and blast it after a moment.
+        for i in 0..<5 {
+            let a = Double(i) * 1.2
+            game.spawn(Bestiary.murkling, at: game.player.position + Vec2(cos(a) * 2, sin(a) * 2))
+        }
+        run(.sequence([.wait(forDuration: 1.3), .run { [self] in
+            _ = game.castSkill("rallying_roar", target: nil, point: game.player.position)
+            _ = game.castSkill("cinder_nova", target: nil, point: game.player.position)
+        }]))
+        DispatchQueue.main.async { [self] in
+            let cp = CGPoint(x: skillPanel.position.x + 140, y: skillPanel.position.y + 135)
+            if let v = view { lastMouseInView = v.convert(CGPoint(x: cp.x + cam.position.x, y: cp.y + cam.position.y), from: self) }
+        }
     }
 
     private func debugLoot() {
@@ -163,15 +201,7 @@ final class GameScene: SKScene {
         let dt = lastTime == 0 ? 0 : min(currentTime - lastTime, 0.05)
         lastTime = currentTime
 
-        var dir = Vec2.zero
-        if keys.contains("w") || keys.contains("up") { dir = dir + Vec2(-1, -1) }
-        if keys.contains("s") || keys.contains("down") { dir = dir + Vec2(1, 1) }
-        if keys.contains("a") || keys.contains("left") { dir = dir + Vec2(-1, 1) }
-        if keys.contains("d") || keys.contains("right") { dir = dir + Vec2(1, -1) }
-
-        if dir.length > 0 {
-            game.commandWalk(direction: dir, dt: dt)
-        } else if mouseHeld && game.player.target == nil {
+        if mouseHeld && game.player.target == nil {
             repathTimer -= dt
             if repathTimer <= 0, let t = mouseWorldPoint() {
                 game.commandMove(to: t)
@@ -268,6 +298,9 @@ final class GameScene: SKScene {
         hud.update(player: p, target: hovered.flatMap { game.monster($0) } ?? targetMonster())
         if !inventoryPanel.isHidden { inventoryPanel.refresh(p) }
         if !characterPanel.isHidden { characterPanel.refresh(p) }
+        if !skillPanel.isHidden { skillPanel.refresh(p) }
+        hotbar.update(p, time: game.time)
+        updateAura(p)
         syncCursorAndTooltip()
     }
 
@@ -303,8 +336,96 @@ final class GameScene: SKScene {
            case .item(let it) = g.content { item = it }
         if let item {
             tooltip.show(item, player: p, at: cp, bounds: size)
+        } else if !skillPanel.isHidden, let sid = skillPanel.skill(at: cp), let d = Skills.def(sid) {
+            tooltip.showLines(key: "skill\(sid)\(p.skills.level(sid))\(p.level)\(p.hasShield)", title: d.name,
+                              titleColor: SkillVisuals.color(d.tree), rows: SkillVisuals.tooltipRows(d, player: p), at: cp, bounds: size)
         } else {
             tooltip.hide()
+        }
+    }
+
+    private func updateAura(_ p: Player) {
+        aura.position = player.position
+        aura.zPosition = player.zPosition - 0.01
+        let ids = Set(p.buffs.map(\.skillID))
+        if ids.isEmpty || !game.playerAlive { aura.isHidden = true; return }
+        aura.isHidden = false
+        if ids.contains("sunshield") {
+            aura.strokeColor = NSColor(calibratedRed: 1, green: 0.85, blue: 0.3, alpha: 0.9)
+        } else if ids.contains("ember_ward") {
+            aura.strokeColor = NSColor(calibratedRed: 1, green: 0.4, blue: 0.1, alpha: 0.8)
+        } else if ids.contains("rallying_roar") {
+            aura.strokeColor = NSColor(calibratedRed: 0.9, green: 0.2, blue: 0.15, alpha: 0.7)
+        } else {
+            aura.strokeColor = NSColor(calibratedRed: 0.6, green: 0.7, blue: 0.9, alpha: 0.7)
+        }
+    }
+
+    /// World circle of `radius` tiles as an iso ellipse.
+    private func isoEllipse(radius r: Double) -> CGSize {
+        CGSize(width: r * 2 * Iso.tileWidth / 2 * 2.0.squareRoot(), height: r * 2 * Iso.tileHeight / 2 * 2.0.squareRoot())
+    }
+
+    private func novaEffect(_ id: String, at p: Vec2, radius: Double) {
+        let color: NSColor
+        switch id {
+        case "cinder_nova": color = NSColor(calibratedRed: 1, green: 0.45, blue: 0.1, alpha: 1)
+        case "quake_cry": color = NSColor(calibratedRed: 0.75, green: 0.6, blue: 0.4, alpha: 1)
+        case "dread_howl": color = NSColor(calibratedRed: 0.6, green: 0.3, blue: 0.8, alpha: 1)
+        default: color = NSColor(calibratedRed: 0.5, green: 0.15, blue: 0.15, alpha: 1)
+        }
+        let full = isoEllipse(radius: radius)
+        let ring = SKShapeNode(ellipseOf: full)
+        ring.strokeColor = color
+        ring.lineWidth = 4
+        ring.glowWidth = 8
+        ring.fillColor = color.withAlphaComponent(0.15)
+        ring.position = screen(p)
+        ring.zPosition = 8_500
+        ring.setScale(0.1)
+        worldNode.addChild(ring)
+        ring.run(.sequence([.group([.scale(to: 1, duration: 0.3), .sequence([.wait(forDuration: 0.15), .fadeOut(withDuration: 0.35)])]),
+                            .removeFromParent()]))
+        if id == "cinder_nova" {
+            for i in 0..<14 {
+                let a = Double(i) / 14 * 2 * .pi
+                let ember = SKShapeNode(circleOfRadius: 3)
+                ember.fillColor = NSColor(calibratedRed: 1, green: 0.6, blue: 0.2, alpha: 1)
+                ember.strokeColor = .clear
+                ember.glowWidth = 3
+                ember.position = screen(p)
+                ember.zPosition = 8_600
+                worldNode.addChild(ember)
+                let d = Iso.toScreen(Vec2(cos(a), sin(a)) * radius)
+                ember.run(.sequence([.group([.moveBy(x: d.x, y: d.y + 10, duration: 0.35), .fadeOut(withDuration: 0.4)]), .removeFromParent()]))
+            }
+        }
+    }
+
+    private func skillEffect(_ id: String, at: Vec2, toward: Vec2) {
+        guard let d = Skills.def(id) else { return }
+        let color = SkillVisuals.color(d.tree)
+        switch d.kind {
+        case .buff:
+            let ring = SKShapeNode(ellipseOf: CGSize(width: 50, height: 25))
+            ring.strokeColor = color; ring.lineWidth = 3; ring.glowWidth = 6
+            ring.position = screen(at); ring.zPosition = 8_500
+            worldNode.addChild(ring)
+            ring.run(.sequence([.group([.moveBy(x: 0, y: 50, duration: 0.5), .fadeOut(withDuration: 0.5)]), .removeFromParent()]))
+            floatText(d.name, at: at, color: color, size: 14, rise: 30)
+        case .meleeAttack, .charge, .whirl:
+            let dir = Iso.toScreen((toward - at).normalized)
+            let arc = SKShapeNode(ellipseOf: CGSize(width: 46, height: 20))
+            arc.strokeColor = id == "flame_strike" ? NSColor(calibratedRed: 1, green: 0.5, blue: 0.1, alpha: 1) : color
+            arc.lineWidth = 3; arc.glowWidth = 5
+            arc.position = screen(at) + CGPoint(x: dir.x * 0.8, y: dir.y * 0.8 + 18)
+            arc.zPosition = 8_500
+            arc.zRotation = atan2(CGFloat(dir.y), CGFloat(dir.x))
+            worldNode.addChild(arc)
+            arc.run(.sequence([.group([.scale(to: id == "cleave" ? 2.2 : 1.4, duration: 0.15), .fadeOut(withDuration: 0.2)]), .removeFromParent()]))
+            if d.kind == .whirl { player.spin(duration: 1.2) }
+        default:
+            break
         }
     }
 
@@ -364,7 +485,27 @@ final class GameScene: SKScene {
                 message("物品栏已满", color: ItemVisuals.bad)
             case .cannotEquip(let name):
                 message("无法装备 \(name)：属性不足", color: ItemVisuals.bad)
-            case .potion, .itemDropped, .absorbed, .skillUsed, .nova, .stunned, .notEnoughMana, .skillUnavailable:
+            case .nova(let id, let at, let r):
+                novaEffect(id, at: at, radius: r)
+            case .skillUsed(let id, let at, let toward):
+                skillEffect(id, at: at, toward: toward)
+            case .stunned(let id):
+                if let n = monsterNodes[id] {
+                    let stars = SKLabelNode(fontNamed: "Menlo-Bold")
+                    stars.text = "✦ ✦"
+                    stars.fontSize = 11
+                    stars.fontColor = ItemVisuals.gold
+                    stars.position = CGPoint(x: 0, y: n.bodyHeight + 8)
+                    n.addChild(stars)
+                    stars.run(.sequence([.wait(forDuration: 1), .fadeOut(withDuration: 0.3), .removeFromParent()]))
+                }
+            case .absorbed(let at):
+                floatText("吸收", at: at, color: ItemVisuals.gold, size: 12)
+            case .notEnoughMana:
+                message("法力不足", color: NSColor(calibratedRed: 0.5, green: 0.6, blue: 1, alpha: 1))
+            case .skillUnavailable(let why):
+                message(why, color: ItemVisuals.bad)
+            case .potion, .itemDropped:
                 break
             }
         }
@@ -440,6 +581,7 @@ final class GameScene: SKScene {
         guard let cp = mouseCamPoint() else { return false }
         if !inventoryPanel.isHidden && inventoryPanel.hit(cp) != .outside { return true }
         if !characterPanel.isHidden && characterPanel.contains(camPoint: cp) { return true }
+        if !skillPanel.isHidden && skillPanel.contains(camPoint: cp) { return true }
         return false
     }
 
@@ -483,6 +625,12 @@ final class GameScene: SKScene {
                 break
             }
         }
+        if let cp = mouseCamPoint(), !skillPanel.isHidden, skillPanel.contains(camPoint: cp) {
+            if let sid = skillPanel.skill(at: cp), let err = game.player.learnSkill(sid) {
+                message(learnErrorText(err), color: ItemVisuals.bad)
+            }
+            return
+        }
         if let cp = mouseCamPoint(), !characterPanel.isHidden, characterPanel.contains(camPoint: cp) {
             if let a = characterPanel.attributeButton(at: cp) { game.spendStatPoint(a) }
             return
@@ -511,8 +659,34 @@ final class GameScene: SKScene {
 
     override func mouseUp(with event: NSEvent) { mouseHeld = false }
 
+    private func learnErrorText(_ e: SkillBook.LearnError) -> String {
+        switch e {
+        case .noPoints: "没有技能点"
+        case .levelTooLow: "等级不足"
+        case .missingPrerequisite(let id): "需要先学习 \(Skills.def(id)?.name ?? id)"
+        case .maxed: "已达最高等级"
+        case .unknown: "未知技能"
+        }
+    }
+
+    private func bindHoveredSkill(to key: String) -> Bool {
+        guard !skillPanel.isHidden, let cp = mouseCamPoint(), let sid = skillPanel.skill(at: cp),
+              game.player.skills.level(sid) > 0, Skills.def(sid)?.isActive == true else { return false }
+        for (k, v) in game.player.hotbar where v == sid { game.player.hotbar[k] = nil }
+        game.player.hotbar[key] = sid
+        return true
+    }
+
+    private func castHotbar(_ key: String) {
+        guard let id = game.player.hotbar[key] else { return }
+        let r = game.castSkill(id, target: monsterUnderMouse(), point: mouseWorldPoint() ?? game.player.position)
+        if r == .needsTarget { message("需要目标", color: ItemVisuals.bad) }
+    }
+
     override func rightMouseDown(with event: NSEvent) {
         lastMouseInView = view?.convert(event.locationInWindow, from: nil)
+        if bindHoveredSkill(to: "rmb") { return }
+        if !mouseOverUI() && game.player.cursor == nil { castHotbar("rmb"); return }
         guard let cp = mouseCamPoint(), !inventoryPanel.isHidden, game.player.cursor == nil else { return }
         switch inventoryPanel.hit(cp) {
         case .cell(let x, let y):
@@ -546,14 +720,19 @@ final class GameScene: SKScene {
 
     override func keyDown(with event: NSEvent) {
         guard let k = keyName(event) else { return }
+        if event.keyCode == 96 { seed &+= 1; buildLevel(); return }   // F5
+        if ["q", "w", "e", "r"].contains(k) {
+            if !bindHoveredSkill(to: k) { castHotbar(k) }
+            return
+        }
         if !event.isARepeat {
             switch k {
-            case "r": seed &+= 1; buildLevel(); return
+            case "t": skillPanel.isHidden.toggle(); return
             case "1": game.drinkHealthPotion(); return
             case "2": game.drinkManaPotion(); return
             case "i", "b": inventoryPanel.isHidden.toggle(); return
             case "c": characterPanel.isHidden.toggle(); return
-            case "\u{1b}": inventoryPanel.isHidden = true; characterPanel.isHidden = true; return
+            case "\u{1b}": inventoryPanel.isHidden = true; characterPanel.isHidden = true; skillPanel.isHidden = true; return
             default: break
             }
         }

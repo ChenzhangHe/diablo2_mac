@@ -155,23 +155,14 @@ final class Tooltip: SKNode {
 
     required init?(coder: NSCoder) { fatalError() }
 
-    private(set) var shownItemID: Int?
-
     private var boxSize = CGSize.zero
 
     func show(_ item: Item, player: Player, at p: CGPoint, bounds: CGSize) {
-        if shownItemID == item.id && !isHidden {
-            place(at: p, bounds: bounds)
-            return
-        }
-        removeAllChildren()
-        addChild(bg)
-        var rows: [(String, NSColor)] = [(item.displayName, ItemVisuals.labelColor(item))]
+        var rows: [(String, NSColor)] = []
         let meets = player.canEquip(item) || EquipSlot.slots(for: item.base.category).isEmpty
         for line in item.tooltipLines {
-            let isReq = line.hasPrefix("需要")
             let color: NSColor
-            if isReq {
+            if line.hasPrefix("需要") {
                 color = meets ? .white : ItemVisuals.bad
             } else if item.modifierLines.contains(line) {
                 color = ItemVisuals.color(.magic)
@@ -181,9 +172,24 @@ final class Tooltip: SKNode {
             rows.append((line, color))
         }
         if item.isPotion { rows.append(("右键使用", NSColor(white: 0.7, alpha: 1))) }
+        showLines(key: "item\(item.id)", title: item.displayName, titleColor: ItemVisuals.labelColor(item),
+                  rows: rows, at: p, bounds: bounds)
+    }
+
+    private var shownKey: String?
+
+    /// Generic tooltip. `key` identifies content so it is only rebuilt when it changes.
+    func showLines(key: String, title: String, titleColor: NSColor, rows: [(String, NSColor)], at p: CGPoint, bounds: CGSize) {
+        if shownKey == key && !isHidden {
+            place(at: p, bounds: bounds)
+            return
+        }
+        removeAllChildren()
+        addChild(bg)
+        let all = [(title, titleColor)] + rows
         let lh: CGFloat = 17
         var width: CGFloat = 0
-        for (i, (t, c)) in rows.enumerated() {
+        for (i, (t, c)) in all.enumerated() {
             let l = SKLabelNode(fontNamed: i == 0 ? "PingFangSC-Semibold" : "PingFangSC-Regular")
             l.text = t
             l.fontSize = i == 0 ? 14 : 12
@@ -193,14 +199,14 @@ final class Tooltip: SKNode {
             addChild(l)
             width = max(width, l.frame.width)
         }
-        let h = CGFloat(rows.count) * lh + 8
+        let h = CGFloat(all.count) * lh + 8
         let w = width + 20
         bg.path = CGPath(roundedRect: CGRect(x: -w / 2, y: -h, width: w, height: h), cornerWidth: 3, cornerHeight: 3, transform: nil)
         bg.fillColor = NSColor(white: 0.02, alpha: 0.92)
         bg.strokeColor = NSColor(white: 0.4, alpha: 0.8)
         boxSize = CGSize(width: w, height: h)
         isHidden = false
-        shownItemID = item.id
+        shownKey = key
         place(at: p, bounds: bounds)
     }
 
@@ -216,6 +222,6 @@ final class Tooltip: SKNode {
 
     func hide() {
         isHidden = true
-        shownItemID = nil
+        shownKey = nil
     }
 }

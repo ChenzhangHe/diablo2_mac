@@ -21,8 +21,9 @@ open build/AshenSigil.app
 | I / B | Inventory (left click pick/place, right click equip/use) |
 | C | Character sheet |
 | Esc | Close panels |
-| WASD / arrows | Move |
-| R | Regenerate level (next seed) |
+| Right click / Q W E R | Use skill bound to that key |
+| T | Skill trees (left click learn; hover + Q/W/E/R/right click to bind) |
+| F5 | Regenerate level (next seed) |
 
 ## Layout
 

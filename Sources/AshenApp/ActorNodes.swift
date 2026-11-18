@@ -68,6 +68,10 @@ final class PlayerNode: SKNode {
                               .rotate(toAngle: -0.3, duration: 0.12)]))
     }
 
+    func spin(duration: Double) {
+        body.run(.sequence([.rotate(byAngle: -.pi * 2 * duration * 3, duration: duration), .rotate(toAngle: 0, duration: 0)]))
+    }
+
     func setDead(_ dead: Bool) {
         body.removeAllActions()
         body.zRotation = dead ? .pi / 2 : 0
